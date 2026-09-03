@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-04 - GSRPS arithmetic checkpoints
+
+- Added portable, SHA-256-protected `GSRPCK1` checkpoints for CUDA `--check`
+  runs, including periodic saves, completion saves, checkpoint inspection, and
+  strict resume validation.
+- Added safe `Ctrl+C`/`CTRL_BREAK` handling. Long zero-bit runs are split into
+  at most 64-square chunks so an interrupt can synchronize and save promptly.
+- Checkpoints contain only canonical radix limbs and progress metadata; NTT
+  tables, tuning data, and CUDA Graphs are rebuilt on resume.
+- Validated Windows/Linux cross-resume, completed-state replay, known PRP and
+  composite results, corrupted-file rejection, and real process-tree interrupts.
+
 ## 2026-09-04 - Windows GFPS checkpoint fix
 
 - Fixed periodic GFPS checkpoint updates on Windows. The Microsoft C runtime

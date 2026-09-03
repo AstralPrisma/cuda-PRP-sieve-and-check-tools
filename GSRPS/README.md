@@ -133,9 +133,46 @@ These commands measure arithmetic primitives and do not perform a complete PRP c
 
 ## Checkpoint behavior
 
-The standalone CUDA checker currently has **no arithmetic checkpoint/resume option** for `--check`. If a check is interrupted, start that check again from the beginning. The `.gsrps_tuning_cache` directory only caches performance choices.
+Enable periodic arithmetic checkpoints for a fresh check with:
 
-External queue or network wrappers may implement their own task state, but that state is outside this standalone source tree and must not be confused with an arithmetic residue checkpoint.
+```bash
+./GSRPS \
+  --checkpoint work.ckpt \
+  --checkpoint-every-bits 100000 \
+  --check '326*799^325799-1' 2
+```
+
+Resume the same candidate and witness with:
+
+```bash
+./GSRPS \
+  --checkpoint work.ckpt \
+  --checkpoint-every-bits 100000 \
+  --resume-checkpoint \
+  --check '326*799^325799-1' 2
+```
+
+Inspect a checkpoint without resuming it:
+
+```bash
+./GSRPS --checkpoint-info work.ckpt
+```
+
+`--checkpoint-every-bits 0` disables periodic writes but still saves on a clean
+completion or handled interrupt. `Ctrl+C`/`CTRL_BREAK` is handled at the next
+complete sliding-window operation or at most 64 consecutive zero-bit squares;
+the checker synchronizes the CUDA stream, writes a safe checkpoint, and exits
+with status 130.
+
+Checkpoint format `GSRPCK1` stores canonical radix limbs and enough metadata to
+reconstruct the exact modular-exponentiation prefix. It is fixed little-endian,
+SHA-256 protected, and portable between the Windows and Linux builds of the
+same arithmetic layout. Candidate, witness, layout, window, progress, exact
+file length, digit ranges, and residue canonicality are all validated. A
+damaged or mismatched file is rejected instead of silently starting over.
+
+The `.gsrps_tuning_cache` directory remains separate: it only caches performance
+choices and contains no partial PRP result.
 
 ## Known limits
 
