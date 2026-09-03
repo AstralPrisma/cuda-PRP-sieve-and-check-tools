@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <iostream>
@@ -25,6 +26,12 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
 #endif
@@ -3336,9 +3343,40 @@ void write_checkpoint_file(const std::string& path, uint64_t base, int n, uint64
         os.flush();
         if (!os) throw std::runtime_error("failed while writing checkpoint: " + tmp_path);
     }
+#ifdef _WIN32
+    const std::filesystem::path tmp_fs(tmp_path);
+    const std::filesystem::path target_fs(path);
+    const std::wstring tmp_w = tmp_fs.wstring();
+    const std::wstring target_w = target_fs.wstring();
+    HANDLE tmp_handle = CreateFileW(
+        tmp_w.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (tmp_handle == INVALID_HANDLE_VALUE) {
+        const DWORD error = GetLastError();
+        throw std::runtime_error(
+            "cannot open checkpoint temp file for durable flush: " + tmp_path +
+            " (Windows error " + std::to_string(static_cast<unsigned long>(error)) + ")");
+    }
+    if (!FlushFileBuffers(tmp_handle)) {
+        const DWORD error = GetLastError();
+        CloseHandle(tmp_handle);
+        throw std::runtime_error(
+            "cannot durably flush checkpoint temp file: " + tmp_path +
+            " (Windows error " + std::to_string(static_cast<unsigned long>(error)) + ")");
+    }
+    CloseHandle(tmp_handle);
+    if (!MoveFileExW(tmp_w.c_str(), target_w.c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD error = GetLastError();
+        throw std::runtime_error(
+            "cannot move checkpoint temp file into place: " + path +
+            " (Windows error " + std::to_string(static_cast<unsigned long>(error)) + ")");
+    }
+#else
     if (std::rename(tmp_path.c_str(), path.c_str()) != 0) {
         throw std::runtime_error("cannot move checkpoint temp file into place: " + path);
     }
+#endif
 }
 
 CheckpointData read_checkpoint_file(const std::string& path) {

@@ -151,6 +151,8 @@ Other checkpoint utilities:
 
 Do not resume a checkpoint with different `b` or `n`. Checkpoint version 2 validates metadata, digit count/ranges, file length, and SHA-256 before allocating the resident state.
 
+Checkpoint replacement is atomic on supported local filesystems. Windows builds durably flush the temporary file and use `MoveFileExW` with replacement semantics, so periodic saves can safely overwrite an existing checkpoint.
+
 ## Diagnostics and benchmarks
 
 ```text

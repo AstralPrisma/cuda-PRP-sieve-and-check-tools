@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-04 - Windows GFPS checkpoint fix
+
+- Fixed periodic GFPS checkpoint updates on Windows. The Microsoft C runtime
+  `rename()` does not replace an existing destination, so the second save used
+  to stop a run with `cannot move checkpoint temp file into place`.
+- Windows now flushes the completed temporary checkpoint and atomically replaces
+  the previous file with `MoveFileExW`.
+- Revalidated fresh writes, repeated overwrites, restart/resume, SHA-256 parsing,
+  and the GFPS CUDA self-test on `sm_89`.
+
 ## 2026-09-03 - Initial public source release
 
 - GFPS 4.0: CUDA probable-prime testing for generalized Fermat numbers.
