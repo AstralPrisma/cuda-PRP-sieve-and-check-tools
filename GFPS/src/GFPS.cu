@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -37,6 +38,26 @@
 #endif
 
 namespace {
+
+class GfpsInterrupted : public std::runtime_error {
+public:
+    explicit GfpsInterrupted(const std::string& message)
+        : std::runtime_error(message) {}
+};
+
+volatile std::sig_atomic_t g_gfps_stop_requested = 0;
+
+void gfps_signal_handler(int) {
+    g_gfps_stop_requested = 1;
+}
+
+void install_gfps_signal_handlers() {
+    g_gfps_stop_requested = 0;
+    std::signal(SIGINT, gfps_signal_handler);
+#ifdef _WIN32
+    std::signal(SIGBREAK, gfps_signal_handler);
+#endif
+}
 
 struct ModInfo {
     uint32_t p;
@@ -3610,6 +3631,7 @@ void run_prp_resident_run(uint64_t base, int n, uint64_t max_bits, const std::st
     if (base > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
         throw std::runtime_error("resident GPU path requires base < 2^63");
     }
+    install_gfps_signal_handlers();
 
     const uint64_t m = uint64_t(1) << n;
     const cpp_int exponent = pow_cpp(base, m);
@@ -3642,6 +3664,10 @@ void run_prp_resident_run(uint64_t base, int n, uint64_t max_bits, const std::st
         std::cout << "prp-resident-run: checkpoint is already beyond requested target, no square steps run\n";
         target = start;
     }
+    if (g_gfps_stop_requested != 0) {
+        save_resident_checkpoint(checkpoint_path, r, base, n, total_bits, start);
+        throw GfpsInterrupted("interrupted before the first resident exponent bit");
+    }
 
     const uint64_t run_start = start;
     const uint64_t todo = target > start ? target - start : 0;
@@ -3658,6 +3684,13 @@ void run_prp_resident_run(uint64_t base, int n, uint64_t max_bits, const std::st
         const int bit_index = top - static_cast<int>(k);
         r.square_dup(bit_test(exponent, bit_index));
         const uint64_t done = k + 1;
+
+        if (g_gfps_stop_requested != 0) {
+            save_resident_checkpoint(checkpoint_path, r, base, n, total_bits, done);
+            std::cout << "checkpoint: interrupt saved, processed_bits=" << done
+                      << "/" << total_bits << ", path=" << checkpoint_path << "\n";
+            throw GfpsInterrupted("interrupted after saving a safe resident checkpoint");
+        }
 
         if (checkpoint_every_bits != 0 && (done % checkpoint_every_bits) == 0) {
             save_resident_checkpoint(checkpoint_path, r, base, n, total_bits, done);
@@ -3920,7 +3953,8 @@ void usage(const char* argv0) {
 }  // namespace
 
 int main(int argc, char** argv) {
-
+    std::cout.setf(std::ios::unitbuf);
+    std::cerr.setf(std::ios::unitbuf);
     try {
         std::vector<char*> filtered_argv = consume_gpu_throttle_args(argc, argv);
         argc = static_cast<int>(filtered_argv.size());
@@ -4013,6 +4047,9 @@ int main(int argc, char** argv) {
         }
         usage(argv[0]);
         return 1;
+    } catch (const GfpsInterrupted& e) {
+        std::cerr << "interrupted: " << e.what() << "\n";
+        return 130;
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
         return 1;

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-04 - Cross-platform interrupt and live-output fix
+
+- Updated the toolkit's matching Python clients so each child has an isolated
+  process group/session and interrupt delivery flows once from outer client to
+  wrapper to CUDA checker. Repeated interrupts are ignored during shutdown so
+  cleanup and final output draining can finish.
+- Replaced blocking Windows pipe reads in those clients with background
+  readers, keeping the main thread responsive to `Ctrl+C`/`CTRL_BREAK`.
+- GFPS now saves the latest safe main checkpoint when interrupted and exits
+  with status 130; interrupted tasks remain available for resume and are not
+  submitted or released as completed.
+- GFPS and GSRPS now flush redirected output in real time on Windows. This fixes
+  delayed GSRPS progress/checkpoint output and makes GFPS interruption visible
+  throughout the three-layer client process tree.
+
 ## 2026-09-04 - GSRPS arithmetic checkpoints
 
 - Added portable, SHA-256-protected `GSRPCK1` checkpoints for CUDA `--check`

@@ -174,6 +174,14 @@ damaged or mismatched file is rejected instead of silently starting over.
 The `.gsrps_tuning_cache` directory remains separate: it only caches performance
 choices and contains no partial PRP result.
 
+When the checker is used through the toolkit's Python clients, each child runs
+in an isolated process group/session and a single interrupt is propagated from
+outer client to wrapper to checker. Repeated interrupts are ignored while the
+child is being synchronized and its checkpoint/output is being drained. The
+checker flushes standard output through redirected pipes, so Windows clients
+display tuning, progress, and checkpoint lines while the calculation is still
+running instead of releasing them only at process exit.
+
 ## Known limits
 
 - `k >= 1`, `b >= 2`, `n >= 1`, and `c` must be exactly `+1` or `-1`.

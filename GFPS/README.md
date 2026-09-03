@@ -153,6 +153,16 @@ Do not resume a checkpoint with different `b` or `n`. Checkpoint version 2 valid
 
 Checkpoint replacement is atomic on supported local filesystems. Windows builds durably flush the temporary file and use `MoveFileExW` with replacement semantics, so periodic saves can safely overwrite an existing checkpoint.
 
+`Ctrl+C` on POSIX, or `Ctrl+C`/`CTRL_BREAK` on Windows, is handled after the
+current resident square reaches a consistent boundary. GFPS then writes the
+latest main checkpoint and exits with status 130. When the checker is used
+through the toolkit's Python clients, each child is placed in its own process
+group/session and one interrupt is forwarded from outer client to wrapper to
+checker. Additional interrupts are ignored while shutdown and checkpoint
+cleanup are in progress, so they cannot abort that cleanup path. Standard
+output is flushed through pipes, including on Windows, so progress and
+checkpoint messages remain visible while a run is active.
+
 ## Diagnostics and benchmarks
 
 ```text

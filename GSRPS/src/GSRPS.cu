@@ -4334,6 +4334,8 @@ void usage(const char* argv0) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    std::cout.setf(std::ios::unitbuf);
+    std::cerr.setf(std::ios::unitbuf);
     try {
         std::vector<char*> filtered_argv = consume_gpu_throttle_args(argc, argv);
         argc = static_cast<int>(filtered_argv.size());
