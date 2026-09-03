@@ -117,7 +117,8 @@ try {
                 "Test GPU: NVIDIA GeForce RTX 4060 Laptop GPU"
                 "Source SHA-256: $(Get-Sha256 (Join-Path $repoDirectory "$tool\src\$tool.cu"))"
                 "Built with C++17, -O3, and per-thread default-stream semantics."
-                "The binaries contain native cubins and no universal PTX fallback."
+                "Each binary contains native cubins and compiler-emitted PTX matched to its named target."
+                "Separate binaries are used instead of one universal executable for all GPU generations."
             )
             [IO.File]::WriteAllLines((Join-Path $componentStage "BUILDINFO.txt"), $buildInfo, $utf8)
 

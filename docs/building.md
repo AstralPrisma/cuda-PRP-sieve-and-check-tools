@@ -1,8 +1,10 @@
 # Building on Linux and Windows
 
 All four programs are single-translation-unit CUDA C++17 applications. The
-build scripts intentionally create one native-cubin executable per CUDA SM
-target; they do not add a universal PTX fallback.
+build scripts intentionally create one executable per CUDA SM target. Each
+contains native cubins for that target; CUDA may also emit target-matched PTX.
+The release therefore uses separate files instead of one universal executable
+for all GPU generations.
 
 ## Common prerequisites
 

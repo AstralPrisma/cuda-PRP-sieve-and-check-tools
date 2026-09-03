@@ -48,10 +48,12 @@ target GPU.
 | `sm_100` | yes | yes | yes | yes |
 | `sm_120` | yes | yes | yes | yes |
 
-Both Linux x86-64 ELF and Windows x64 PE executables are provided. They contain
-native cubins, not a universal PTX fallback. Architectures that have only been
-cross-compiled are marked as such in the Release notes; only `sm_89` was
-runtime-tested for the initial public release.
+Both Linux x86-64 ELF and Windows x64 PE executables are provided. Each file
+contains native cubins for the SM target in its filename. CUDA may also embed
+PTX for that same target; these packages do not use one universal executable
+for all GPU generations. Architectures that have only been cross-compiled are
+marked as such in the Release notes; only `sm_89` was runtime-tested for the
+initial public release.
 
 After downloading an archive, verify its checksum and, on Linux, make the
 executable runnable if necessary:
