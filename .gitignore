@@ -1,0 +1,52 @@
+# Build products belong in GitHub Releases, not in source history.
+**/build/
+**/bin/
+**/dist/
+/release-assets/
+/.build-deps/
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.obj
+*.pdb
+*.ptx
+*.cubin
+*.fatbin
+
+# Runtime state and large search data.
+**/net_work/
+**/work/
+**/tmp/
+**/logs/
+**/cands/
+**/candidates/
+**/factors/
+**/.gsrps_tuning_cache/
+*.log
+*.ckpt
+*.anchor*
+*.tmp
+*.bak
+current_task.json
+gpu_tuning_cache.json
+out.txt
+result.txt
+
+# Local credentials and machine-specific client configuration.
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+client_config.json
+!client_config.example.json
+*token*
+*secret*
+
+# Editors and operating systems.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

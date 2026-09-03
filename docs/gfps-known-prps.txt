@@ -1,0 +1,7 @@
+# Published generalized Fermat prime regression candidates.
+# Format: b n, representing b^(2^n)+1. Complete checks are expensive.
+1814570322984178 16
+1814570322977518 16
+12192710656 16
+1010036096 16
+604832956 16
