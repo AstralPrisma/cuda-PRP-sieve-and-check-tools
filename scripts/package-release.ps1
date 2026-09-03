@@ -69,7 +69,7 @@ try {
         $version = $versions[$tool]
         foreach ($platform in @("linux", "windows")) {
             $suffix = if ($platform -eq "windows") { ".exe" } else { "" }
-            $host = if ($platform -eq "windows") { "windows-x86_64" } else { "linux-x86_64" }
+            $hostPlatform = if ($platform -eq "windows") { "windows-x86_64" } else { "linux-x86_64" }
             $archiveExtension = if ($platform -eq "windows") { ".zip" } else { ".tar.xz" }
             $rootName = "$tool-$version"
             $platformStage = Join-Path $stagingPath $platform
@@ -110,7 +110,7 @@ try {
                 "Suite release: $SuiteVersion"
                 "Component: $tool $version"
                 "Source commit: $commit"
-                "Platform: $host"
+                "Platform: $hostPlatform"
                 "Compiler: $compiler"
                 "CUDA targets: $($architectures -join ', ')"
                 "Runtime-tested target: sm_89"
@@ -121,7 +121,7 @@ try {
             )
             [IO.File]::WriteAllLines((Join-Path $componentStage "BUILDINFO.txt"), $buildInfo, $utf8)
 
-            $archiveName = "$($tool.ToLowerInvariant())-$version-$host-cuda13.3$archiveExtension"
+            $archiveName = "$($tool.ToLowerInvariant())-$version-$hostPlatform-cuda13.3$archiveExtension"
             $archivePath = Join-Path $outputPath $archiveName
             if ($platform -eq "windows") {
                 Invoke-External { & tar.exe -a -c -f $archivePath -C $platformStage $rootName } "Windows ZIP packaging"
@@ -143,7 +143,7 @@ try {
                 artifact_sha256 = Get-Sha256 $archivePath
                 cuda_toolkit = "13.3.33"
                 targets = $architectures
-                host = $host
+                host = $hostPlatform
                 runtime_tested_targets = @("sm_89")
                 test_hardware = "NVIDIA GeForce RTX 4060 Laptop GPU"
                 binaries = $binaryRecords
