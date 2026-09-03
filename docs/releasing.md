@@ -153,6 +153,13 @@ Then run the applicable `--version`, help, self-test, known-checksum, and small
 sieve tests. Confirm that the archive contains no generated checkpoint, factor,
 candidate, result, cache, or log file.
 
+After producing raw binaries with the build scripts, create the eight
+component/platform archives, source archive, manifest, and checksums with:
+
+```powershell
+scripts\package-release.ps1 -SuiteVersion v2026.09.0
+```
+
 ## Publishing with GitHub CLI
 
 After review, signing, and checksum verification, a maintainer may create the
