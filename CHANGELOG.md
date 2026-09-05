@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.09.4 - GFPS 4.1, GSRPS 2.3, and GFNSV CUDA 1.0
+
+- GFPS 4.1 enables half-length negacyclic NTT, DIF/DIT and shared-memory kernel
+  fusion, plus checked carry batches with whole-batch adaptive replay.
+  `--reference-mode`, `--batch-bits`, and diagnostic replay controls support
+  direct result comparisons. Windows duty throttling now waits after short
+  work windows instead of rounding a delay after every square.
+- GSRPS 2.3 enables condition-checked weighted division scans and compact carry
+  reduction, preserving exact fallback behavior for other arithmetic shapes.
+- Added GFNSV CUDA 1.0 for generalized Fermat interval sieving, with paired-root
+  enumeration, default CPU factor verification, and saved-state continuation.
+  The separate CPU GFNSV archive is not part of this repository.
+- The local source tree, build matrix, component documentation, smoke tests,
+  and packaging configuration now cover five tools.
+- Added the exact GFPS even-base CRT ceilings for n=10..20; larger n is marked
+  `Not supported`. Approximate `--analyze` output is not authoritative at the boundary.
+- Release packaging validates explicit compiler, flags, source/header hashes,
+  binary hashes and runtime-test evidence instead of inferring tests from SM names.
+
 ## 2026-09-04 - Cross-platform interrupt and live-output fix
 
 - Updated the toolkit's matching Python clients so each child has an isolated

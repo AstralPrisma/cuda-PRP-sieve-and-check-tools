@@ -34,7 +34,8 @@ Upstream project: <https://github.com/kimwalisch/primesieve>
 ## Boost.Multiprecision
 
 GFPS and GSRPS use Boost.Multiprecision headers for host-side exact-integer
-operations and verification paths. Boost is distributed under the Boost
+operations and verification paths. The Windows GFNSV build uses Boost's
+fixed-width unsigned 128-bit type for host-side arithmetic. Boost is distributed under the Boost
 Software License, version 1.0.
 
 License: <https://www.boost.org/LICENSE_1_0.txt>
@@ -55,7 +56,7 @@ Upstream project: <https://github.com/NVIDIA/cccl>
 
 ## NVIDIA CUDA Toolkit and runtime
 
-All four tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
+All five tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
 and GPU to execute. The CUDA toolkit, headers, compiler, driver, and any
 redistributable runtime components remain subject to NVIDIA's licenses and EULA.
 They are not relicensed by this repository's GPL license.
@@ -74,8 +75,8 @@ authors.
 - PRST: <https://github.com/AenBleidd/rebirther-prst>
 - llrCUDA mirror: <https://github.com/primesearch/llrCUDA>
 
-GFPS contains a self-contained SHA-256 implementation used to authenticate
-checkpoint metadata and digits. It implements the standardized SHA-256
+GFPS, GSRPS, and GFNSV contain self-contained SHA-256 implementations used to
+authenticate checkpoint metadata and records. They implement the standardized SHA-256
 algorithm; a cryptographic standard is not itself a substitute for a primality
 certificate.
 

@@ -1,6 +1,6 @@
 # Building on Linux and Windows
 
-All four programs are single-translation-unit CUDA C++17 applications. The
+All five programs are single-translation-unit CUDA C++17 applications. The
 build scripts intentionally create one executable per CUDA SM target. Each
 contains native cubins for that target; CUDA may also emit target-matched PTX.
 The release therefore uses separate files instead of one universal executable
@@ -10,7 +10,7 @@ for all GPU generations.
 
 - An NVIDIA CUDA Toolkit new enough to support the requested `sm_XX` target.
 - A 64-bit CUDA-supported host compiler.
-- Boost headers for GFPS and GSRPS.
+- Boost headers for GFPS and GSRPS, and for GFNSV on Windows.
 - CUB/CCCL from the CUDA Toolkit for GSRPS.
 
 GSRSV and GNCWSV optionally load primesieve at runtime. It is not a build-time
@@ -23,6 +23,7 @@ Each tool accepts an output directory followed by zero or more architectures:
 ```bash
 ./GFPS/scripts/build-linux.sh build/linux sm_89
 ./GSRPS/scripts/build-linux.sh build/linux sm_86 sm_89
+./GFNSV/scripts/build-linux.sh build/linux sm_89
 ```
 
 With no architecture arguments, a script builds `sm_86`, `sm_89`, `sm_100`,
@@ -35,19 +36,21 @@ Build all components with:
 ./scripts/build-all-linux.sh release-assets sm_86 sm_89 sm_100 sm_120
 ```
 
-The sievers link `libdl` and enable pthread support for prime-generation
-workers. GFPS and GSRPS build with per-thread default-stream semantics.
+GSRSV and GNCWSV link `libdl` and enable pthread support for prime-generation
+workers. GFNSV has its own integer prime/root generation and does not load
+primesieve. GFPS, GSRPS, and GFNSV use per-thread default-stream semantics.
 
 ## Windows
 
 Install the CUDA Toolkit and a supported 64-bit Microsoft Visual C++ compiler.
-GFPS and GSRPS additionally require Boost headers. Point `BOOST_ROOT` at the
+GFPS, GSRPS, and GFNSV additionally require Boost headers. Point `BOOST_ROOT` at the
 directory immediately above the `boost` folder:
 
 ```bat
 set BOOST_ROOT=C:\Libraries\boost_1_83_0
 GFPS\scripts\build-windows.bat build\windows sm_89
 GSRPS\scripts\build-windows.bat build\windows sm_89
+GFNSV\scripts\build-windows.bat build\windows sm_89
 GSRSV\scripts\build-windows.bat build\windows sm_89
 GNCWSV\scripts\build-windows.bat build\windows sm_89
 ```

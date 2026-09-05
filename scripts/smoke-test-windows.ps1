@@ -17,6 +17,25 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 try {
     Invoke-Checked (Join-Path $binPath "GFPS_$Architecture.exe") @("--selftest")
     Invoke-Checked (Join-Path $binPath "GSRPS_$Architecture.exe") @("--selftest")
+    $resumePath = Join-Path $scratch "gfnsv-resume.txt"
+    $directPath = Join-Path $scratch "gfnsv-direct.txt"
+    Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @(
+        "--n", "3", "--bmin", "2", "--bmax", "100", "--pmax", "100",
+        "--batch", "16", "--out", $resumePath, "--quiet"
+    )
+    Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @(
+        "--resume", "--out", $resumePath, "--pmax", "1000", "--full-roots", "--quiet"
+    )
+    Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @(
+        "--n", "3", "--bmin", "2", "--bmax", "100", "--pmax", "1000",
+        "--out", $directPath, "--quiet"
+    )
+    $resumedBases = @(Get-Content -LiteralPath $resumePath | Where-Object { $_ -and -not $_.StartsWith('#') })
+    $directBases = @(Get-Content -LiteralPath $directPath | Where-Object { $_ -and -not $_.StartsWith('#') })
+    if (($resumedBases -join "`n") -cne ($directBases -join "`n")) {
+        throw "GFNSV resumed/full-root and direct/paired-root survivors differ"
+    }
+    Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @("--checkpoint-info", $resumePath)
     Invoke-Checked (Join-Path $binPath "GSRSV_$Architecture.exe") @(
         "--kmin", "1", "--kmax", "100", "--base", "2", "--exp", "100",
         "--termtype", "1", "--pmin", "2", "--pmax", "10000",

@@ -137,6 +137,19 @@ int gpu_duty_percent() {
     return gpu_throttle_config().duty_percent;
 }
 
+// The optimized resident path is the default. The padded NTT / adaptive-carry
+// implementation remains available for independent checkpoint comparisons.
+struct ResidentAlgorithmConfig {
+    bool reference_mode = std::getenv("GFPS_REFERENCE_MODE") != nullptr;
+    int batch_bits = read_env_int("GFPS_BATCH_BITS", 512, 0, 4096);
+    bool force_replay = std::getenv("GFPS_FORCE_REPLAY") != nullptr;
+};
+
+ResidentAlgorithmConfig& resident_algorithm_config() {
+    static ResidentAlgorithmConfig config;
+    return config;
+}
+
 // Remove global throttle options from argv so the existing mode-specific
 // positional argument parser remains unchanged. Command-line values override
 // environment variables.
@@ -168,6 +181,16 @@ std::vector<char*> consume_gpu_throttle_args(int argc, char** argv) {
         } else if (arg.rfind("--duty-percent=", 0) == 0) {
             gpu_throttle_config().duty_percent =
                 parse_bounded_int(arg.substr(std::strlen("--duty-percent=")), "--duty-percent", 1, 100);
+        } else if (arg == "--reference-mode") {
+            resident_algorithm_config().reference_mode = true;
+        } else if (arg == "--batch-bits") {
+            resident_algorithm_config().batch_bits =
+                parse_bounded_int(require_next(i, "--batch-bits"), "--batch-bits", 0, 4096);
+        } else if (arg.rfind("--batch-bits=", 0) == 0) {
+            resident_algorithm_config().batch_bits =
+                parse_bounded_int(arg.substr(std::strlen("--batch-bits=")), "--batch-bits", 0, 4096);
+        } else if (arg == "--diagnostic-force-replay") {
+            resident_algorithm_config().force_replay = true;
         } else {
             filtered.push_back(argv[i]);
         }
@@ -180,7 +203,69 @@ int limited_ntt_grid_y(int work_items, int threads) {
     return std::min(ntt_block_limit(), needed);
 }
 
-void throttle_after_gpu_iteration(std::chrono::steady_clock::time_point started) {
+#ifdef _WIN32
+// The Windows standard-library sleep can round each sub-millisecond duty pause
+// up to a full scheduler tick. A private high-resolution one-shot timer avoids
+// that slowdown without changing the timer resolution for other processes.
+// Windows versions before 10 1803 may reject the flag; keep the existing sleep
+// as a compatibility fallback in that case or if a timer operation fails.
+class DutySleepTimer {
+public:
+    DutySleepTimer() noexcept
+        : _handle(CreateWaitableTimerExW(nullptr, nullptr,
+              kHighResolutionFlag,
+              TIMER_MODIFY_STATE | SYNCHRONIZE)) {}
+
+    ~DutySleepTimer() noexcept {
+        if (_handle != nullptr) CloseHandle(_handle);
+    }
+
+    DutySleepTimer(const DutySleepTimer&) = delete;
+    DutySleepTimer& operator=(const DutySleepTimer&) = delete;
+
+    bool sleep_for(std::chrono::nanoseconds duration) noexcept {
+        if (_handle == nullptr) return false;
+        // Negative due times are relative, in units of 100 ns. Round upward
+        // without adding 99 to a potentially very large nanosecond count.
+        const int64_t ns = duration.count();
+        if (ns <= 0) return true;
+        LARGE_INTEGER due{};
+        due.QuadPart = -(ns / 100 + (ns % 100 != 0 ? 1 : 0));
+        if (SetWaitableTimer(_handle, &due, 0, nullptr, nullptr, FALSE) &&
+            WaitForSingleObject(_handle, INFINITE) == WAIT_OBJECT_0) {
+            return true;
+        }
+        // Do not reuse an uncertain timer after an API failure.
+        CancelWaitableTimer(_handle);
+        CloseHandle(_handle);
+        _handle = nullptr;
+        return false;
+    }
+
+private:
+    // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION; using its documented value also
+    // compiles when the SDK target macro predates Windows 10 1803. Availability
+    // is checked by CreateWaitableTimerExW at runtime, with fallback above.
+    static constexpr DWORD kHighResolutionFlag = 0x00000002;
+    HANDLE _handle = nullptr;
+};
+#endif
+
+void sleep_for_gpu_duty(std::chrono::nanoseconds duration) {
+    if (duration.count() <= 0) return;
+#ifdef _WIN32
+    static thread_local DutySleepTimer timer;
+    if (timer.sleep_for(duration)) return;
+#endif
+    std::this_thread::sleep_for(duration);
+}
+
+struct GpuDutyBudget {
+    int64_t pending_work_ns = 0;
+};
+
+void throttle_after_gpu_iteration(std::chrono::steady_clock::time_point started,
+                                  GpuDutyBudget& budget) {
     const int duty = gpu_duty_percent();
     if (duty >= 100) return;
 
@@ -189,9 +274,32 @@ void throttle_after_gpu_iteration(std::chrono::steady_clock::time_point started)
     if (work_ns.count() <= 0) return;
 
     // duty = work / (work + sleep), so sleep = work * (100-duty) / duty.
+#ifdef _WIN32
+    // Even high-resolution waits have significant overhead compared with one
+    // fast GPU iteration. Accumulate only the measured iteration durations,
+    // not checkpoint/printing time or the previous sleep, then rest once per
+    // 10 ms of work. The budget belongs to this residue, not a process global.
+    constexpr int64_t work_quantum_ns = 10000000;
+    budget.pending_work_ns += work_ns.count();
+    if (budget.pending_work_ns < work_quantum_ns) return;
+    auto remaining = std::chrono::nanoseconds(
+        budget.pending_work_ns * static_cast<int64_t>(100 - duty) / duty);
+    budget.pending_work_ns = 0;
+    // A 1% duty cycle can require a long rest. Check the interrupt flag between
+    // short timer waits so checkpoint-on-Ctrl+C remains responsive.
+    constexpr auto max_pause = std::chrono::milliseconds(25);
+    while (remaining.count() > 0 && g_gfps_stop_requested == 0) {
+        const auto pause = std::min(remaining,
+            std::chrono::duration_cast<std::chrono::nanoseconds>(max_pause));
+        sleep_for_gpu_duty(pause);
+        remaining -= pause;
+    }
+#else
+    (void)budget;
     const auto sleep_ns = std::chrono::nanoseconds(
         work_ns.count() * static_cast<int64_t>(100 - duty) / static_cast<int64_t>(duty));
-    if (sleep_ns.count() > 0) std::this_thread::sleep_for(sleep_ns);
+    sleep_for_gpu_duty(sleep_ns);
+#endif
 }
 
 void print_gpu_throttle_config() {
@@ -810,6 +918,20 @@ __global__ void pointwise_square4_kernel(uint32_t* r0, uint32_t* r1, uint32_t* r
     r3[i] = static_cast<uint32_t>((static_cast<uint64_t>(r3[i]) * r3[i]) % p3);
 }
 
+// psi has order 2*m. Twisting by psi^i converts x^m+1 convolution
+// to an m-point cyclic NTT; inverse twisting restores integer coefficients.
+__global__ void twist_rns_kernel(uint32_t* r0, uint32_t* r1, uint32_t* r2,
+                                 uint32_t* r3, const uint32_t* twist,
+                                 int m, int mod_count) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= m) return;
+    r0[i] = static_cast<uint32_t>((static_cast<uint64_t>(r0[i]) * twist[i]) % 998244353u);
+    r1[i] = static_cast<uint32_t>((static_cast<uint64_t>(r1[i]) * twist[m + i]) % 1004535809u);
+    r2[i] = static_cast<uint32_t>((static_cast<uint64_t>(r2[i]) * twist[2*m + i]) % 469762049u);
+    if (mod_count == 4)
+        r3[i] = static_cast<uint32_t>((static_cast<uint64_t>(r3[i]) * twist[3*m + i]) % 1224736769u);
+}
+
 __global__ void scale4_kernel(uint32_t* r0, uint32_t* r1, uint32_t* r2, uint32_t* r3, int len,
                               uint32_t inv0, uint32_t inv1, uint32_t inv2, uint32_t inv3) {
     constexpr uint32_t p0 = 998244353u;
@@ -822,6 +944,118 @@ __global__ void scale4_kernel(uint32_t* r0, uint32_t* r1, uint32_t* r2, uint32_t
     r1[i] = static_cast<uint32_t>((static_cast<uint64_t>(r1[i]) * inv1) % p1);
     r2[i] = static_cast<uint32_t>((static_cast<uint64_t>(r2[i]) * inv2) % p2);
     r3[i] = static_cast<uint32_t>((static_cast<uint64_t>(r3[i]) * inv3) % p3);
+}
+
+template<uint32_t P>
+__device__ void dif_stage2_apply(uint32_t* a, const uint32_t* roots_big,
+                                  const uint32_t* roots_small, int len, int idx) {
+    const int quarter = len >> 2;
+    const int group = idx / quarter;
+    const int j = idx - group * quarter;
+    const int pos = group * len + j;
+    const uint32_t a0 = a[pos], a1 = a[pos+quarter];
+    const uint32_t a2 = a[pos+2*quarter], a3 = a[pos+3*quarter];
+    uint32_t b0 = a0+a2; if (b0>=P) b0-=P;
+    uint32_t b1 = a1+a3; if (b1>=P) b1-=P;
+    const uint32_t b2 = static_cast<uint32_t>(uint64_t(a0>=a2 ? a0-a2 : a0+P-a2)*roots_big[j]%P);
+    const uint32_t b3 = static_cast<uint32_t>(uint64_t(a1>=a3 ? a1-a3 : a1+P-a3)*roots_big[j+quarter]%P);
+    uint32_t c0=b0+b1; if(c0>=P)c0-=P;
+    uint32_t c2=b2+b3; if(c2>=P)c2-=P;
+    a[pos]=c0;
+    a[pos+quarter]=static_cast<uint32_t>(uint64_t(b0>=b1 ? b0-b1 : b0+P-b1)*roots_small[j]%P);
+    a[pos+2*quarter]=c2;
+    a[pos+3*quarter]=static_cast<uint32_t>(uint64_t(b2>=b3 ? b2-b3 : b2+P-b3)*roots_small[j]%P);
+}
+
+__global__ void ntt_dif_stage2_rns_kernel(uint32_t* r0, uint32_t* r1,
+    uint32_t* r2, uint32_t* r3, const uint32_t* tw0, const uint32_t* tw1,
+    const uint32_t* tw2, const uint32_t* tw3,
+    int off_big, int off_small, int len, int groups, int mod_count) {
+    for (int idx=blockIdx.x*blockDim.x+threadIdx.x; idx<groups;
+         idx+=blockDim.x*gridDim.x) {
+        dif_stage2_apply<998244353u>(r0,tw0+off_big,tw0+off_small,len,idx);
+        dif_stage2_apply<1004535809u>(r1,tw1+off_big,tw1+off_small,len,idx);
+        dif_stage2_apply<469762049u>(r2,tw2+off_big,tw2+off_small,len,idx);
+        if(mod_count==4) dif_stage2_apply<1224736769u>(r3,tw3+off_big,tw3+off_small,len,idx);
+    }
+}
+
+template<int Mode>
+__global__ void ntt_shared1024_rns_kernel(uint32_t* r0, uint32_t* r1,
+    uint32_t* r2, uint32_t* r3, const uint32_t* tw0, const uint32_t* tw1,
+    const uint32_t* tw2, const uint32_t* tw3, int mod_count,
+    const uint32_t* inv0, const uint32_t* inv1,
+    const uint32_t* inv2, const uint32_t* inv3) {
+    __shared__ uint32_t a0[1024], a1[1024], a2[1024], a3[1024];
+    const int lane=threadIdx.x, offset=blockIdx.x*1024;
+    for(int i=lane;i<1024;i+=256) {
+        a0[i]=r0[offset+i]; a1[i]=r1[offset+i]; a2[i]=r2[offset+i];
+        if(mod_count==4) a3[i]=r3[offset+i];
+    }
+    __syncthreads();
+    #pragma unroll
+    for(int phase=0;phase<(Mode==2 ? 2 : 1);++phase) {
+    const uint32_t* tr0=Mode==2 && phase==1 ? inv0 : tw0;
+    const uint32_t* tr1=Mode==2 && phase==1 ? inv1 : tw1;
+    const uint32_t* tr2=Mode==2 && phase==1 ? inv2 : tw2;
+    const uint32_t* tr3=Mode==2 && phase==1 ? inv3 : tw3;
+    #pragma unroll
+    for(int pair=0;pair<5;++pair) {
+        const bool forward = Mode==1 || (Mode==2 && phase==0);
+        const int high=forward ? 10-2*pair : 2+2*pair;
+        const int off_big=(1<<(high-1))-1;
+        const int off_small=(1<<(high-2))-1;
+        if(forward) {
+            dif_stage2_apply<998244353u>(a0,tr0+off_big,tr0+off_small,1<<high,lane);
+            dif_stage2_apply<1004535809u>(a1,tr1+off_big,tr1+off_small,1<<high,lane);
+            dif_stage2_apply<469762049u>(a2,tr2+off_big,tr2+off_small,1<<high,lane);
+            if(mod_count==4)
+                dif_stage2_apply<1224736769u>(a3,tr3+off_big,tr3+off_small,1<<high,lane);
+        } else {
+            ntt_stage2_apply(a0,tr0+off_small,tr0+off_big,1<<high,lane,998244353u);
+            ntt_stage2_apply(a1,tr1+off_small,tr1+off_big,1<<high,lane,1004535809u);
+            ntt_stage2_apply(a2,tr2+off_small,tr2+off_big,1<<high,lane,469762049u);
+            if(mod_count==4)
+                ntt_stage2_apply(a3,tr3+off_small,tr3+off_big,1<<high,lane,1224736769u);
+        }
+        __syncthreads();
+    }
+    if(Mode==2 && phase==0) {
+        for(int i=lane;i<1024;i+=256) {
+            a0[i]=static_cast<uint32_t>(uint64_t(a0[i])*a0[i]%998244353u);
+            a1[i]=static_cast<uint32_t>(uint64_t(a1[i])*a1[i]%1004535809u);
+            a2[i]=static_cast<uint32_t>(uint64_t(a2[i])*a2[i]%469762049u);
+            if(mod_count==4) a3[i]=static_cast<uint32_t>(uint64_t(a3[i])*a3[i]%1224736769u);
+        }
+        __syncthreads();
+    }
+    }
+    for(int i=lane;i<1024;i+=256) {
+        r0[offset+i]=a0[i]; r1[offset+i]=a1[i]; r2[offset+i]=a2[i];
+        if(mod_count==4) r3[offset+i]=a3[i];
+    }
+}
+
+template<uint32_t P>
+__device__ void dif_stage_apply(uint32_t* a, const uint32_t* roots, int len, int idx) {
+    const int half=len/2, group=idx/half, j=idx-group*half;
+    const int pos=group*len+j;
+    const uint32_t u=a[pos], v=a[pos+half];
+    uint32_t sum=u+v; if(sum>=P) sum-=P;
+    a[pos]=sum;
+    a[pos+half]=static_cast<uint32_t>(uint64_t(u>=v ? u-v : u+P-v)*roots[j]%P);
+}
+
+__global__ void ntt_dif_stage_rns_kernel(uint32_t* r0, uint32_t* r1,
+    uint32_t* r2, uint32_t* r3, const uint32_t* tw0, const uint32_t* tw1,
+    const uint32_t* tw2, const uint32_t* tw3,
+    int offset, int len, int butterflies, int mod_count) {
+    for(int idx=blockIdx.x*blockDim.x+threadIdx.x; idx<butterflies;idx+=gridDim.x*blockDim.x) {
+        dif_stage_apply<998244353u>(r0,tw0+offset,len,idx);
+        dif_stage_apply<1004535809u>(r1,tw1+offset,len,idx);
+        dif_stage_apply<469762049u>(r2,tw2+offset,len,idx);
+        if(mod_count==4) dif_stage_apply<1224736769u>(r3,tw3+offset,len,idx);
+    }
 }
 
 __global__ void pointwise_square_kernel(uint32_t* a, int len, uint32_t p) {
@@ -1370,6 +1604,12 @@ __global__ void update_block_carries_plain_kernel(S128* carry_in, const S128* ca
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_blocks) return;
     carry_in[i] = (i == 0) ? d_neg_s128(carry_out[num_blocks - 1]) : carry_out[i - 1];
+}
+
+// A nonconverged speculative step is never accepted: its whole batch is
+// restored and replayed through the original adaptive normalizer on the host.
+__global__ void latch_carry_failure_kernel(const int* changed, int* sticky) {
+    if (*changed != 0) *sticky = 1;
 }
 
 __global__ void digits_to_rns3_kernel(uint32_t* r0, uint32_t* r1, uint32_t* r2,
@@ -1985,18 +2225,29 @@ void ntt3_inplace_precomputed(uint32_t* r0, uint32_t* r1, uint32_t* r2,
                               const uint32_t* tw0, const uint32_t* tw1, const uint32_t* tw2,
                               const std::vector<int>& offsets, bool synchronize,
                               const uint32_t* inverse_lengths,
-                              cudaStream_t stream = 0) {
+                              cudaStream_t stream = 0, bool reverse_input = true,
+                              bool shared_low = false, bool shared_already_done = false) {
     const int len_total = 1 << log_len;
     const int threads = 256;
     const int blocks = (len_total + threads - 1) / threads;
+    if (reverse_input) {
     bit_reverse_table3_kernel<<<blocks, threads, 0, stream>>>(
         tmp0, tmp1, tmp2, r0, r1, r2, d_rev, len_total);
     cuda_check(cudaGetLastError(), "bit_reverse3 launch");
     copy3_kernel<<<blocks, threads, 0, stream>>>(
         r0, r1, r2, tmp0, tmp1, tmp2, len_total);
     cuda_check(cudaGetLastError(), "bit_reverse3 copy launch");
+    }
 
     int stage = 1;
+    if (shared_low && log_len >= 10) {
+        if (!shared_already_done) {
+        ntt_shared1024_rns_kernel<false><<<len_total/1024,256,0,stream>>>(
+            r0,r1,r2,nullptr,tw0,tw1,tw2,nullptr,3,nullptr,nullptr,nullptr,nullptr);
+        cuda_check(cudaGetLastError(), "shared inverse low stages3");
+        }
+        stage=11;
+    }
     for (; stage + 1 <= log_len; stage += 2) {
         const int len = 1 << (stage + 1);
         const int groups = len_total / 4;
@@ -2039,18 +2290,29 @@ void ntt4_inplace_precomputed(uint32_t* r0, uint32_t* r1, uint32_t* r2, uint32_t
                               const uint32_t* tw2, const uint32_t* tw3,
                               const std::vector<int>& offsets, bool synchronize,
                               const uint32_t* inverse_lengths,
-                              cudaStream_t stream = 0) {
+                              cudaStream_t stream = 0, bool reverse_input = true,
+                              bool shared_low = false, bool shared_already_done = false) {
     const int len_total = 1 << log_len;
     const int threads = 256;
     const int blocks = (len_total + threads - 1) / threads;
+    if (reverse_input) {
     bit_reverse_table4_kernel<<<blocks, threads, 0, stream>>>(
         tmp0, tmp1, tmp2, tmp3, r0, r1, r2, r3, d_rev, len_total);
     cuda_check(cudaGetLastError(), "bit_reverse4 launch");
     copy4_kernel<<<blocks, threads, 0, stream>>>(
         r0, r1, r2, r3, tmp0, tmp1, tmp2, tmp3, len_total);
     cuda_check(cudaGetLastError(), "bit_reverse4 copy launch");
+    }
 
     int stage = 1;
+    if (shared_low && log_len >= 10) {
+        if (!shared_already_done) {
+        ntt_shared1024_rns_kernel<false><<<len_total/1024,256,0,stream>>>(
+            r0,r1,r2,r3,tw0,tw1,tw2,tw3,4,nullptr,nullptr,nullptr,nullptr);
+        cuda_check(cudaGetLastError(), "shared inverse low stages4");
+        }
+        stage=11;
+    }
     for (; stage + 1 <= log_len; stage += 2) {
         const int len = 1 << (stage + 1);
         const int groups = len_total / 4;
@@ -2245,6 +2507,27 @@ public:
         }
         if (base < 2) throw std::runtime_error("base must be at least 2");
         _inv_base = 1.0 / static_cast<double>(base);
+        const auto& algorithm = resident_algorithm_config();
+        _negacyclic = !algorithm.reference_mode &&
+                      std::getenv("GFPS_DISABLE_NEGACYCLIC") == nullptr;
+        _dif = !algorithm.reference_mode && std::getenv("GFPS_DISABLE_DIF") == nullptr;
+        _shared_low = _dif && std::getenv("GFPS_DISABLE_SHARED") == nullptr;
+        _square_log_len = _log_len - (_negacyclic ? 1 : 0);
+        _square_len = 1 << _square_log_len;
+        _fused_tile = _shared_low && _square_log_len >= 10 &&
+                      std::getenv("GFPS_DISABLE_FUSED_TILE") == nullptr;
+        _batch_bits = algorithm.reference_mode ? 0 : algorithm.batch_bits;
+        _fast_carry_passes = read_env_int("GFPS_CARRY_PASSES",
+                                        _base < 1000000000000ull ? 4 : 3, 3, 8);
+        if (gpu_duty_percent() != 100) _batch_bits = 0;
+        _force_replay = algorithm.force_replay;
+        std::cout << "resident-algorithm: ntt=" << (_negacyclic ? "negacyclic" : "padded")
+                  << ", ntt_length=" << _square_len
+                  << ", dif=" << (_dif ? "yes" : "no")
+                  << ", shared=" << (_shared_low && _square_log_len >= 10 ? "yes" : "no")
+                  << ", fused=" << (_fused_tile ? "yes" : "no")
+                  << ", batch_bits=" << _batch_bits
+                  << ", force_replay=" << (_force_replay ? "yes" : "no") << "\n";
         if (!ntt_blocks_are_forced()) {
             int device = 0;
             cudaDeviceProp properties{};
@@ -2268,6 +2551,8 @@ public:
             for (int i = 0; i < _mod_count; ++i) {
                 _inverse_lengths[i] = pow_mod_host(
                     static_cast<uint32_t>(_len), kMods[i].p - 2ull, kMods[i].p);
+                _square_inverse_lengths[i] = pow_mod_host(
+                    static_cast<uint32_t>(_square_len), kMods[i].p - 2ull, kMods[i].p);
             }
             for (int i = 0; i < _mod_count; ++i) {
                 cuda_check(cudaMalloc(&_d_tmp_r[i], sizeof(uint32_t) * _len), "resident malloc tmp");
@@ -2276,6 +2561,34 @@ public:
             const auto rev = make_bit_reverse_table_host(_log_len);
             cuda_check(cudaMemcpy(_d_rev, rev.data(), sizeof(uint32_t) * _len, cudaMemcpyHostToDevice),
                        "resident copy bit reverse table");
+            _square_rev = _d_rev;
+            if (_negacyclic) {
+                cuda_check(cudaMalloc(&_d_neg_rev, sizeof(uint32_t) * _m), "negacyclic malloc reverse table");
+                const auto neg_rev = make_bit_reverse_table_host(_square_log_len);
+                cuda_check(cudaMemcpy(_d_neg_rev, neg_rev.data(), sizeof(uint32_t) * _m,
+                    cudaMemcpyHostToDevice), "negacyclic copy reverse table");
+                _square_rev = _d_neg_rev;
+                std::vector<uint32_t> twist(_m * _mod_count), untwist(_m * _mod_count);
+                for (int j = 0; j < _mod_count; ++j) {
+                    const uint32_t p = kMods[j].p;
+                    const uint32_t psi = pow_mod_host(kMods[j].g, (p-1ull)/(_m*2ull), p);
+                    const uint32_t invpsi = pow_mod_host(psi, p-2ull, p);
+                    if (pow_mod_host(psi, _m, p) != p-1)
+                        throw std::runtime_error("negacyclic twist order mismatch");
+                    uint64_t u = 1, v = 1;
+                    for (int i = 0; i < _m; ++i) {
+                        twist[j*_m+i] = static_cast<uint32_t>(u);
+                        untwist[j*_m+i] = static_cast<uint32_t>(v);
+                        u = u*psi%p; v = v*invpsi%p;
+                    }
+                }
+                cuda_check(cudaMalloc(&_d_twist, sizeof(uint32_t)*twist.size()), "negacyclic malloc twist");
+                cuda_check(cudaMalloc(&_d_untwist, sizeof(uint32_t)*untwist.size()), "negacyclic malloc untwist");
+                cuda_check(cudaMemcpy(_d_twist, twist.data(), sizeof(uint32_t)*twist.size(),
+                    cudaMemcpyHostToDevice), "negacyclic copy twist");
+                cuda_check(cudaMemcpy(_d_untwist, untwist.data(), sizeof(uint32_t)*untwist.size(),
+                    cudaMemcpyHostToDevice), "negacyclic copy untwist");
+            }
             const int total_roots = _len - 1;
             for (int i = 0; i < _mod_count; ++i) {
                 cuda_check(cudaMalloc(&_d_twiddle_fwd[i], sizeof(uint32_t) * total_roots), "resident malloc fwd twiddles");
@@ -2300,6 +2613,16 @@ public:
                        "resident malloc pinned changed flag");
             cuda_check(cudaMalloc(&_d_out, sizeof(int64_t) * _m), "resident malloc out");
             cuda_check(cudaMalloc(&_d_status, sizeof(int)), "resident malloc status");
+            if (_batch_bits > 0) {
+                for (int i = 0; i < _mod_count; ++i)
+                    cuda_check(cudaMalloc(&_d_batch_snapshot[i], sizeof(uint32_t) * _len),
+                               "batch malloc snapshot");
+                cuda_check(cudaMalloc(&_d_batch_failed, sizeof(int)), "batch malloc sticky flag");
+                _pending_dups.reserve(static_cast<size_t>(_batch_bits));
+                std::cout << "carry-batching: batch_bits=" << _batch_bits
+                          << ", fast_carry_passes=" << _fast_carry_passes
+                          << ", exact adaptive replay on carry failure\n";
+            }
             _graphs_enabled = GFPS_USE_CUDA_GRAPHS != 0 &&
                               std::getenv("GFPS_DISABLE_CUDA_GRAPHS") == nullptr;
             if (_graphs_enabled) {
@@ -2324,6 +2647,7 @@ public:
     GpuResidue& operator=(const GpuResidue&) = delete;
 
     void set_coeffs(const std::vector<int64_t>& a) {
+        finish_pending();
         if (static_cast<int>(a.size()) != _m) throw std::runtime_error("bad coefficient vector size");
         int64_t* d_src = nullptr;
         cuda_check(cudaMalloc(&d_src, sizeof(int64_t) * _m), "resident malloc src");
@@ -2350,6 +2674,28 @@ public:
     }
 
     [[maybe_unused]] void square_dup(bool dup) {
+        if (_batch_bits > 0) {
+            if (_pending_dups.empty()) {
+                if (_timing_enabled) _batch_started = std::chrono::steady_clock::now();
+                for (int i = 0; i < _mod_count; ++i)
+                    cuda_check(cudaMemcpyAsync(_d_batch_snapshot[i], _d_r[i],
+                        sizeof(uint32_t) * _len, cudaMemcpyDeviceToDevice, _stream),
+                        "batch snapshot RNS");
+                cuda_check(cudaMemsetAsync(_d_batch_failed, 0, sizeof(int), _stream),
+                           "batch reset sticky flag");
+            }
+            if (_graphs_enabled) {
+                cuda_check(cudaGraphLaunch(_square_graph_exec[dup ? 1 : 0], _stream),
+                           "batch launch complete square graph");
+            } else {
+                if (_mod_count == 3) launch_square3_prefix(dup ? 2u : 1u);
+                else launch_square4_prefix(dup ? 2u : 1u);
+                launch_speculative_tail();
+            }
+            _pending_dups.push_back(dup ? 1 : 0);
+            if (static_cast<int>(_pending_dups.size()) >= _batch_bits) finish_pending();
+            return;
+        }
         const auto throttle_started = std::chrono::steady_clock::now();
         std::chrono::steady_clock::time_point t_transform0;
         std::chrono::steady_clock::time_point t_norm0;
@@ -2391,15 +2737,18 @@ public:
             _transform_seconds += std::chrono::duration<double>(t_norm0 - t_transform0).count();
             _normalize_seconds += std::chrono::duration<double>(t1 - t_norm0).count();
         }
-        throttle_after_gpu_iteration(throttle_started);
+        throttle_after_gpu_iteration(throttle_started, _duty_budget);
     }
 
     [[maybe_unused]] void mul_small(uint32_t scale) {
+        finish_pending();
         if (scale == 1) return;
         record_carry_iterations(normalize_current_mods(scale, nullptr, "resident scalar"));
     }
 
-    [[maybe_unused]] void mul_assign(const GpuResidue& rhs) {
+    [[maybe_unused]] void mul_assign(GpuResidue& rhs) {
+        finish_pending();
+        rhs.finish_pending();
         if (_base != rhs._base || _m != rhs._m) throw std::runtime_error("resident multiply shape mismatch");
         if (this == &rhs) {
             square_dup(false);
@@ -2423,6 +2772,7 @@ public:
     }
 
     [[maybe_unused]] std::vector<int64_t> get_digits(bool count_stats = true) {
+        finish_pending();
         const int iterations = normalize_current_mods(1u, _d_out, "resident get_digits");
         if (count_stats) record_carry_iterations(iterations);
         std::vector<int64_t> out(_m);
@@ -2431,6 +2781,8 @@ public:
     }
 
     [[maybe_unused]] void reset_stats() {
+        finish_pending();
+        _duty_budget.pending_work_ns = 0;
         _carry_iterations = 0;
         _normalize_calls = 0;
         _transform_seconds = 0.0;
@@ -2465,6 +2817,50 @@ public:
         return _carry_block_size;
     }
 
+    void finish_pending() {
+        if (_pending_dups.empty()) return;
+        cuda_check(cudaMemcpyAsync(_h_changed, _d_batch_failed, sizeof(int),
+                                   cudaMemcpyDeviceToHost, _stream), "batch read sticky flag");
+        cuda_check(cudaStreamSynchronize(_stream), "batch completion barrier");
+        const bool replay = *_h_changed != 0 || _force_replay;
+        if (replay) {
+            for (int i = 0; i < _mod_count; ++i)
+                cuda_check(cudaMemcpyAsync(_d_r[i], _d_batch_snapshot[i],
+                    sizeof(uint32_t) * _len, cudaMemcpyDeviceToDevice, _stream),
+                    "batch restore last validated RNS");
+            for (unsigned char bit : _pending_dups) {
+                const uint32_t scale = bit ? 2u : 1u;
+                if (_mod_count == 3) launch_square3_prefix(scale);
+                else launch_square4_prefix(scale);
+                int iterations = _mod_count == 3
+                    ? normalize3_relaxed(_d_r[0], _d_r[1], _d_r[2], _m, _base,
+                        _inv_base, scale, _d_coeff, _d_digits, nullptr, _d_carry_in,
+                        _d_carry_out, _num_carry_blocks, _carry_block_size,
+                        _d_changed, "batch replay", true, _stream, _h_changed)
+                    : normalize4_relaxed(_d_r[0], _d_r[1], _d_r[2], _d_r[3], _m,
+                        _base, _inv_base, scale, _d_coeff, _d_digits, nullptr,
+                        _d_carry_in, _d_carry_out, _num_carry_blocks,
+                        _carry_block_size, _d_changed, "batch replay", true,
+                        _stream, _h_changed);
+                record_carry_iterations(iterations);
+            }
+            ++_replayed_batches;
+            std::cout << "carry-batching: replayed batch=" << _replayed_batches
+                      << ", bits=" << _pending_dups.size() << "\n";
+        } else {
+            _carry_iterations += _fast_carry_passes * _pending_dups.size();
+            _normalize_calls += _pending_dups.size();
+        }
+        // Asynchronous batches cannot be meaningfully split into transform and
+        // carry host timings. Account the complete validated/replayed batch in
+        // the combined counter reported by --bench-resident instead.
+        if (_timing_enabled) {
+            _transform_seconds += std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - _batch_started).count();
+        }
+        _pending_dups.clear();
+    }
+
 private:
     void release_resources_noexcept() noexcept {
         if (_stream != nullptr) cudaStreamSynchronize(_stream);
@@ -2483,6 +2879,13 @@ private:
             _h_changed = nullptr;
         }
         cudaFree(_d_status); _d_status = nullptr;
+        cudaFree(_d_neg_rev); _d_neg_rev = nullptr;
+        cudaFree(_d_twist); _d_twist = nullptr;
+        cudaFree(_d_untwist); _d_untwist = nullptr;
+        cudaFree(_d_batch_failed); _d_batch_failed = nullptr;
+        for (auto& pointer : _d_batch_snapshot) {
+            cudaFree(pointer); pointer = nullptr;
+        }
         cudaFree(_d_out); _d_out = nullptr;
         cudaFree(_d_changed); _d_changed = nullptr;
         cudaFree(_d_carry_out); _d_carry_out = nullptr;
@@ -2515,22 +2918,26 @@ private:
 
     void launch_square3_prefix(uint32_t scale) {
         const int threads = 256;
-        const int blocks = (_len + threads - 1) / threads;
-        ntt3_inplace_precomputed(
+        const int blocks = (_square_len + threads - 1) / threads;
+        if (_negacyclic) launch_twist(false);
+        if (_dif) launch_dif_forward(_fused_tile);
+        else ntt3_inplace_precomputed(
             _d_r[0], _d_r[1], _d_r[2],
             _d_tmp_r[0], _d_tmp_r[1], _d_tmp_r[2],
-            _log_len, _d_rev, false,
+            _square_log_len, _square_rev, false,
             _d_twiddle_fwd[0], _d_twiddle_fwd[1], _d_twiddle_fwd[2],
-            _twiddle_offsets, false, _inverse_lengths.data(), _stream);
-        pointwise_square3_kernel<<<blocks, threads, 0, _stream>>>(
-            _d_r[0], _d_r[1], _d_r[2], _len);
+            _twiddle_offsets, false, _square_inverse_lengths.data(), _stream);
+        if (_fused_tile) launch_fused_tile();
+        else pointwise_square3_kernel<<<blocks, threads, 0, _stream>>>(
+            _d_r[0], _d_r[1], _d_r[2], _square_len);
         cuda_check(cudaGetLastError(), "resident pointwise_square3 launch");
         ntt3_inplace_precomputed(
             _d_r[0], _d_r[1], _d_r[2],
             _d_tmp_r[0], _d_tmp_r[1], _d_tmp_r[2],
-            _log_len, _d_rev, true,
+            _square_log_len, _square_rev, true,
             _d_twiddle_inv[0], _d_twiddle_inv[1], _d_twiddle_inv[2],
-            _twiddle_offsets, false, _inverse_lengths.data(), _stream);
+            _twiddle_offsets, false, _square_inverse_lengths.data(), _stream, !_dif, _shared_low, _fused_tile);
+        if (_negacyclic) launch_twist(true);
         launch_normalize3_relaxed_prefix(
             _d_r[0], _d_r[1], _d_r[2], _m, _base, _inv_base, scale,
             _d_coeff, _d_digits, _d_carry_in, _d_carry_out,
@@ -2539,28 +2946,88 @@ private:
 
     void launch_square4_prefix(uint32_t scale) {
         const int threads = 256;
-        const int blocks = (_len + threads - 1) / threads;
-        ntt4_inplace_precomputed(
+        const int blocks = (_square_len + threads - 1) / threads;
+        if (_negacyclic) launch_twist(false);
+        if (_dif) launch_dif_forward(_fused_tile);
+        else ntt4_inplace_precomputed(
             _d_r[0], _d_r[1], _d_r[2], _d_r[3],
             _d_tmp_r[0], _d_tmp_r[1], _d_tmp_r[2], _d_tmp_r[3],
-            _log_len, _d_rev, false,
+            _square_log_len, _square_rev, false,
             _d_twiddle_fwd[0], _d_twiddle_fwd[1],
             _d_twiddle_fwd[2], _d_twiddle_fwd[3],
-            _twiddle_offsets, false, _inverse_lengths.data(), _stream);
-        pointwise_square4_kernel<<<blocks, threads, 0, _stream>>>(
-            _d_r[0], _d_r[1], _d_r[2], _d_r[3], _len);
+            _twiddle_offsets, false, _square_inverse_lengths.data(), _stream);
+        if (_fused_tile) launch_fused_tile();
+        else pointwise_square4_kernel<<<blocks, threads, 0, _stream>>>(
+            _d_r[0], _d_r[1], _d_r[2], _d_r[3], _square_len);
         cuda_check(cudaGetLastError(), "resident pointwise_square4 launch");
         ntt4_inplace_precomputed(
             _d_r[0], _d_r[1], _d_r[2], _d_r[3],
             _d_tmp_r[0], _d_tmp_r[1], _d_tmp_r[2], _d_tmp_r[3],
-            _log_len, _d_rev, true,
+            _square_log_len, _square_rev, true,
             _d_twiddle_inv[0], _d_twiddle_inv[1],
             _d_twiddle_inv[2], _d_twiddle_inv[3],
-            _twiddle_offsets, false, _inverse_lengths.data(), _stream);
+            _twiddle_offsets, false, _square_inverse_lengths.data(), _stream, !_dif, _shared_low, _fused_tile);
+        if (_negacyclic) launch_twist(true);
         launch_normalize4_relaxed_prefix(
             _d_r[0], _d_r[1], _d_r[2], _d_r[3],
             _m, _base, _inv_base, scale, _d_coeff, _d_digits,
             _d_carry_in, _d_carry_out, _d_changed, _stream);
+    }
+
+    void launch_dif_forward(bool skip_low = false) {
+        int stage = _square_log_len;
+        const bool tiled = _shared_low && stage >= 10;
+        if(tiled && (stage % 2)!=0) {
+            ntt_dif_stage_rns_kernel<<<limited_ntt_grid_y(_square_len/2,256),256,0,_stream>>>(
+                _d_r[0],_d_r[1],_d_r[2],_d_r[3],
+                _d_twiddle_fwd[0],_d_twiddle_fwd[1],_d_twiddle_fwd[2],_d_twiddle_fwd[3],
+                _twiddle_offsets[stage],1<<stage,_square_len/2,_mod_count);
+            cuda_check(cudaGetLastError(), "DIF odd top stage");
+            --stage;
+        }
+        for (; stage >= (tiled ? 12 : 2); stage -= 2) {
+            const int groups = _square_len / 4;
+            ntt_dif_stage2_rns_kernel<<<limited_ntt_grid_y(groups,256),256,0,_stream>>>(
+                _d_r[0],_d_r[1],_d_r[2],_d_r[3],
+                _d_twiddle_fwd[0],_d_twiddle_fwd[1],_d_twiddle_fwd[2],_d_twiddle_fwd[3],
+                _twiddle_offsets[stage],_twiddle_offsets[stage-1],1<<stage,groups,_mod_count);
+            cuda_check(cudaGetLastError(), "DIF two-stage launch");
+        }
+        if(tiled) {
+            if (!skip_low) {
+            ntt_shared1024_rns_kernel<true><<<_square_len/1024,256,0,_stream>>>(
+                _d_r[0],_d_r[1],_d_r[2],_d_r[3],
+                _d_twiddle_fwd[0],_d_twiddle_fwd[1],_d_twiddle_fwd[2],_d_twiddle_fwd[3],_mod_count,
+                nullptr,nullptr,nullptr,nullptr);
+            cuda_check(cudaGetLastError(), "shared forward low stages");
+            }
+            stage=0;
+        }
+        if(stage==1) {
+            const int y=limited_ntt_grid_y(_square_len/2,256);
+            if(_mod_count==3)
+                ntt_stage_3_kernel<<<dim3(1,y),256,0,_stream>>>(_d_r[0],_d_r[1],_d_r[2],
+                    _d_twiddle_fwd[0],_d_twiddle_fwd[1],_d_twiddle_fwd[2],2,_square_len/2);
+            else
+                ntt_stage_4_kernel<<<dim3(1,y),256,0,_stream>>>(_d_r[0],_d_r[1],_d_r[2],_d_r[3],
+                    _d_twiddle_fwd[0],_d_twiddle_fwd[1],_d_twiddle_fwd[2],_d_twiddle_fwd[3],2,_square_len/2);
+            cuda_check(cudaGetLastError(), "DIF final stage launch");
+        }
+    }
+
+    void launch_fused_tile() {
+        ntt_shared1024_rns_kernel<2><<<_square_len/1024,256,0,_stream>>>(
+            _d_r[0],_d_r[1],_d_r[2],_d_r[3],
+            _d_twiddle_fwd[0],_d_twiddle_fwd[1],_d_twiddle_fwd[2],_d_twiddle_fwd[3],_mod_count,
+            _d_twiddle_inv[0],_d_twiddle_inv[1],_d_twiddle_inv[2],_d_twiddle_inv[3]);
+        cuda_check(cudaGetLastError(), "fused forward-square-inverse tile");
+    }
+
+    void launch_twist(bool inverse) {
+        twist_rns_kernel<<<(_m+255)/256, 256, 0, _stream>>>(
+            _d_r[0], _d_r[1], _d_r[2], _d_r[3],
+            inverse ? _d_untwist : _d_twist, _m, _mod_count);
+        cuda_check(cudaGetLastError(), "negacyclic twist launch");
     }
 
     void capture_square_graphs() {
@@ -2574,6 +3041,7 @@ private:
             } else {
                 launch_square4_prefix(dup ? 2u : 1u);
             }
+            if (_batch_bits > 0) launch_speculative_tail();
             cuda_check(cudaStreamEndCapture(_stream, &_square_graph[dup]),
                        "resident end square graph capture");
             cuda_check(cudaGraphInstantiate(
@@ -2581,6 +3049,40 @@ private:
                            nullptr, nullptr, 0),
                        "resident instantiate square graph");
         }
+    }
+
+    void launch_speculative_tail() {
+        const int threads = 256;
+        const int blocks = (_m + threads - 1) / threads;
+        if (_fast_carry_passes == 3) {
+            latch_carry_failure_kernel<<<1, 1, 0, _stream>>>(_d_changed, _d_batch_failed);
+            cuda_check(cudaGetLastError(), "batch latch convergence");
+        } else {
+            // Small bases propagate carries farther. Only the last pass must
+            // be a fixed point; intermediate nonconvergence is expected.
+            for (int pass=3; pass<_fast_carry_passes; ++pass) {
+                carry_all_kernel<<<blocks,threads,0,_stream>>>(
+                    _d_coeff,_d_digits,_d_carry_out,_d_carry_in,_m,_base,_inv_base);
+                cuda_check(cudaGetLastError(), "batch extra carry pass");
+                if (pass+1 == _fast_carry_passes) {
+                    // atomicExch(...,1) only: failures from earlier bits
+                    // remain latched until the batch is validated/replayed.
+                    update_block_carries_kernel<<<blocks,threads,0,_stream>>>(
+                        _d_carry_in,_d_carry_out,_m,_d_batch_failed);
+                } else {
+                    update_block_carries_plain_kernel<<<blocks,threads,0,_stream>>>(
+                        _d_carry_in,_d_carry_out,_m);
+                }
+                cuda_check(cudaGetLastError(), "batch extra carry convergence");
+            }
+        }
+        if (_mod_count == 3)
+            digits_to_rns3_kernel<<<blocks, threads, 0, _stream>>>(
+                _d_r[0], _d_r[1], _d_r[2], _d_digits, _m, nullptr);
+        else
+            digits_to_rns_kernel<<<blocks, threads, 0, _stream>>>(
+                _d_r[0], _d_r[1], _d_r[2], _d_r[3], _d_digits, _m, nullptr);
+        cuda_check(cudaGetLastError(), "batch export normalized digits");
     }
 
     int normalize_current_mods(uint32_t scale, int64_t* out, const char* tag) {
@@ -2607,6 +3109,17 @@ private:
     int _log_len;
     int _len;
     int _mod_count;
+    bool _negacyclic = false;
+    bool _dif = false;
+    bool _shared_low = false;
+    bool _fused_tile = false;
+    int _square_log_len = 0;
+    int _square_len = 0;
+    uint32_t* _d_neg_rev = nullptr;
+    uint32_t* _square_rev = nullptr;
+    uint32_t* _d_twist = nullptr;
+    uint32_t* _d_untwist = nullptr;
+    std::array<uint32_t, 4> _square_inverse_lengths{};
     int _carry_block_size;
     int _num_carry_blocks;
     uint32_t* _d_r[4] = {};
@@ -2625,13 +3138,22 @@ private:
     int* _h_changed = nullptr;
     int64_t* _d_out = nullptr;
     int* _d_status = nullptr;
+    int _batch_bits = 0;
+    int _fast_carry_passes = 3;
+    bool _force_replay = false;
+    uint64_t _replayed_batches = 0;
+    uint32_t* _d_batch_snapshot[4] = {};
+    int* _d_batch_failed = nullptr;
+    std::vector<unsigned char> _pending_dups;
     cudaStream_t _stream = nullptr;
     bool _graphs_enabled = false;
     cudaGraph_t _square_graph[2] = {};
     cudaGraphExec_t _square_graph_exec[2] = {};
     uint64_t _carry_iterations = 0;
     uint64_t _normalize_calls = 0;
+    GpuDutyBudget _duty_budget;
     bool _timing_enabled = false;
+    std::chrono::steady_clock::time_point _batch_started;
     double _transform_seconds = 0.0;
     double _normalize_seconds = 0.0;
 };
@@ -3476,6 +3998,7 @@ void run_prp_resident_prefix(uint64_t base, int n, uint64_t max_bits) {
         const int bit_index = top - static_cast<int>(k);
         r.square_dup(bit_test(exponent, bit_index));
     }
+    r.finish_pending();
     const auto t1 = std::chrono::steady_clock::now();
     const uint64_t carry_iterations = r.carry_iterations();
     const uint64_t normalize_calls = r.normalize_calls();
@@ -3703,6 +4226,7 @@ void run_prp_resident_run(uint64_t base, int n, uint64_t max_bits, const std::st
 
         const bool should_report = (done == target) || ((done - run_start) % progress_every_bits) == 0;
         if (should_report) {
+            r.finish_pending();
             const auto now = std::chrono::steady_clock::now();
             const double elapsed = std::chrono::duration<double>(now - t0).count();
             const double interval = std::chrono::duration<double>(now - last_progress).count();
@@ -3775,6 +4299,7 @@ void run_verify_transition(const std::string& start_path, const std::string& end
         const int bit_index = top - static_cast<int>(k);
         r.square_dup(bit_test(exponent, bit_index));
     }
+    r.finish_pending();
     const auto t1 = std::chrono::steady_clock::now();
     const auto got = r.get_digits(false);
     if (got != b.digits) {
@@ -3847,6 +4372,9 @@ void run_bench_resident(uint64_t base, int n, uint64_t bits, uint64_t checkpoint
         const int bit_index = top - static_cast<int>(k);
         r.square_dup(bit_test(exponent, bit_index));
         if (checkpoint_every_bits != 0 && ((k + 1) % checkpoint_every_bits) == 0) {
+            // Finish GPU work before timing checkpoint serialization to avoid
+            // counting pending batch execution in both benchmark phases.
+            r.finish_pending();
             const auto c0 = std::chrono::steady_clock::now();
             save_resident_checkpoint(checkpoint_path, r, base, n, total_bits, k + 1);
             const auto c1 = std::chrono::steady_clock::now();
@@ -3854,6 +4382,7 @@ void run_bench_resident(uint64_t base, int n, uint64_t bits, uint64_t checkpoint
             ++checkpoint_count;
         }
     }
+    r.finish_pending();
     const auto t1 = std::chrono::steady_clock::now();
     const auto digits = r.get_digits(false);
     const double total_seconds = std::chrono::duration<double>(t1 - t0).count();
@@ -3918,7 +4447,7 @@ void display_banner() {
     printf("%s\n","           `Y8bood8P'   Y8P o888o        Y8P o888o        Y8P 8''88888P'  Y8P           ");
     printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                            Generalized-Fermat-Primes-Seeker                            ");
-    printf("%s\n","                           Version 4.0 CUDA by A.P. Sept 2026                           ");
+    printf("%s\n","                           Version 4.1 CUDA by A.P. Sept 2026                           ");
 }
 
 void usage(const char* argv0) {
@@ -3927,6 +4456,15 @@ void usage(const char* argv0) {
         << "global GPU options (may appear anywhere):\n"
         << "  --ntt-blocks <1..4096>    force maximum NTT blocks; omit for automatic selection\n"
         << "  --duty-percent <1..100>   resident-square time duty cycle; default 100\n"
+        << "  --batch-bits <0..4096>    checked carry batch size; default 512, 0=adaptive per square\n"
+        << "                           batching is disabled whenever duty-percent is below 100\n"
+        << "                           Windows duty pauses follow approximately 10 ms work windows\n"
+        << "  --reference-mode         original padded NTT and adaptive per-square carry\n"
+        << "  --diagnostic-force-replay replay every carry batch for correctness testing\n"
+        << "diagnostic environment controls (presence disables the named optimization):\n"
+        << "  GFPS_DISABLE_NEGACYCLIC, GFPS_DISABLE_DIF, GFPS_DISABLE_SHARED,\n"
+        << "  GFPS_DISABLE_FUSED_TILE, GFPS_DISABLE_CUDA_GRAPHS\n"
+        << "  GFPS_BATCH_BITS=0..4096; GFPS_CARRY_PASSES=3..8; GFPS_FORCE_REPLAY=1\n"
         << "usage:\n"
         << "  " << argv0 << " --selftest\n"
         << "  " << argv0 << " --analyze <b> <n>\n"

@@ -1,6 +1,6 @@
 # Correctness and result semantics
 
-This document defines what the four tools establish, what they do not
+This document defines what the five tools establish, what they do not
 establish, and the minimum evidence expected before a build is used for a long
 search.
 
@@ -28,6 +28,11 @@ centered CRT reconstruction, and balanced carry normalization. Depending on the
 coefficient bound, the resident path selects three or four NTT primes. It must
 abort rather than continue when the centered CRT range is insufficient.
 
+GFPS 4.1 batches carry work only with a persistent convergence-failure flag.
+Every accepted batch has either passed those checks or been restored and
+replayed from its saved start using adaptive carry. Validate both paths,
+including forced replay, before changing batching or carry bounds.
+
 For even `b`, the ordinary balanced alphabet has exactly one missing residue
 class. GFPS includes the additional canonical representation
 
@@ -52,11 +57,12 @@ Fermat PRP result into a deterministic primality proof.
 
 ## Siever semantics
 
-GSRSV and GNCWSV remove candidates for which they find a factor in the requested
+GFNSV, GSRSV, and GNCWSV remove candidates for which they find a factor in the requested
 prime interval. A surviving term has only survived that sieve range.
 
 - A reported factor should exactly divide the displayed candidate.
-- Use `--verify` when validating a build or changing sieve kernels.
+- Use `--verify` for GSRSV/GNCWSV when validating a build or changing kernels;
+  GFNSV verifies factors on the CPU by default unless `--no-verify` is supplied.
 - Compare uninterrupted and resumed runs over small ranges.
 - Preserve the input, output header, prime bounds, factors file, and command
   line needed to reproduce a sieve run.
@@ -102,6 +108,10 @@ Every release candidate should pass the following checks before publication.
    run.
 5. Exercise built-in and optional primesieve prime-generation modes when both
    are available.
+6. For GFNSV, compare paired-root and full-root survivor sets, keep a small
+   prime candidate when a trial factor equals the candidate itself, and reject
+   corrupted or mismatched resume state. Test interruption during root/batch
+   work so no unprocessed prime interval is skipped.
 
 When comparing two sieve builds, compare survivor files and the set of removed
 expressions. If one expression has several factors in the requested interval,

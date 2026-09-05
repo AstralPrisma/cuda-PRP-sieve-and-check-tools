@@ -1,4 +1,4 @@
-# GFPS
+# GFPS 4.1
 
 GFPS is a CUDA probable-prime checker for generalized Fermat numbers
 
@@ -71,6 +71,11 @@ Global options may appear anywhere in the command line:
                          Omit it to use automatic selection.
 --duty-percent <1..100>  GPU work-time duty cycle for resident squaring.
                          The default is 100.
+--batch-bits <0..4096>   Checked carry batch size; default 512.
+                         0 uses adaptive carry after every square.
+--reference-mode        Original padded NTT and adaptive per-square carry.
+--diagnostic-force-replay
+                         Replay every carry batch for regression testing.
 ```
 
 Backward-compatible environment variables are also accepted:
@@ -81,7 +86,25 @@ GFPS_DUTY_PERCENT=1..100
 GFPS_DISABLE_CUDA_GRAPHS=1
 ```
 
-`--duty-percent` inserts rest time between GPU iterations. It reduces sustained GPU use but increases wall-clock time. Disabling CUDA Graphs is mainly useful for diagnosis and regression testing.
+Version 4.1 uses half-length negacyclic transforms, DIF/DIT ordering, and fused
+shared-memory kernels by default. Checked carry batches reduce CPU/GPU
+synchronization: an unconverged carry is latched, the batch-start residue is
+restored, and the whole batch is replayed with adaptive carry before its result
+is accepted. Checkpoint writes finish and validate any pending batch first.
+
+`--duty-percent` inserts rest time between GPU work intervals. It reduces
+sustained GPU use but increases wall-clock time. A duty below 100 automatically
+disables carry batching. Windows accumulates approximately 10 ms of work before
+a high-resolution, interruptible wait, avoiding per-square timer rounding.
+The duty is a short-window approximation, not a limit on memory use.
+
+`--reference-mode` and `--batch-bits 0` are useful for comparing optimized and
+reference residues. Disabling CUDA Graphs is also supported for diagnosis.
+`--diagnostic-force-replay` is for exercising the fallback, not routine runs.
+Advanced environment overrides include `GFPS_BATCH_BITS`,
+`GFPS_CARRY_PASSES`, `GFPS_FORCE_REPLAY`, and the presence flags
+`GFPS_DISABLE_NEGACYCLIC`, `GFPS_DISABLE_DIF`, `GFPS_DISABLE_SHARED`,
+and `GFPS_DISABLE_FUSED_TILE`; use the printed help for accepted values.
 
 ## Main PRP commands
 
@@ -154,7 +177,8 @@ Do not resume a checkpoint with different `b` or `n`. Checkpoint version 2 valid
 Checkpoint replacement is atomic on supported local filesystems. Windows builds durably flush the temporary file and use `MoveFileExW` with replacement semantics, so periodic saves can safely overwrite an existing checkpoint.
 
 `Ctrl+C` on POSIX, or `Ctrl+C`/`CTRL_BREAK` on Windows, is handled after the
-current resident square reaches a consistent boundary. GFPS then writes the
+current resident operation reaches a consistent boundary, finishing and
+validating any pending carry batch. GFPS then writes the
 latest main checkpoint and exits with status 130. When the checker is used
 through the toolkit's Python clients, each child is placed in its own process
 group/session and one interrupt is forwarded from outer client to wrapper to
@@ -175,7 +199,11 @@ checkpoint messages remain visible while a run is active.
 --bench-resident <b> <n> <bits> <checkpoint-every-bits-or-0> <checkpoint-file> [carry-block-size]
 ```
 
-Use `--analyze` before a large run to inspect transform and CRT requirements. `--resident-mulcheck` and the `--prp-small*` modes are capped at `n <= 12` because they use expensive reference calculations.
+Use `--analyze` before a large run to estimate transform and CRT requirements.
+Its floating-point estimate can round incorrectly immediately next to a CRT
+boundary; the exact integer check in production modes is authoritative.
+`--resident-mulcheck` and the `--prp-small*` modes are capped at `n <= 12`
+because they use expensive reference calculations.
 
 ## Known limits
 
@@ -186,5 +214,62 @@ Use `--analyze` before a large run to inspect transform and CRT requirements. `-
 - Large candidates require substantial GPU memory and long uninterrupted computation. Keep checkpoints on reliable storage.
 - The arithmetic includes special handling for the unique missing centered residue class of even bases. Do not replace the centered tie rule without preserving that representation and its tests.
 - GPU hardware faults are still possible. Use anchors, independent recomputation, and deterministic proof software for valuable results.
+
+### Base limits by n
+
+The `b < 2^63` requirement is an integer-representation limit, **not** the
+actual maximum usable base. The CRT coefficient bound is tighter and depends
+on `n`. For the current four NTT primes, their product is
+
+```text
+P4 = 998244353 * 1004535809 * 469762049 * 1224736769
+   = 576929796637471070305089837581991937
+```
+
+Production modes use exact multiprecision integer arithmetic to require
+
+```text
+2 * 2^n * ceil(b / 2)^2 < P4
+```
+
+For an **even** base, the largest value satisfying this strict inequality is
+
+```text
+b_max(n) = 2 * isqrt((P4 - 1) // 2^(n + 1))
+```
+
+Here `//` is integer division and `isqrt` is the floor of the exact integer
+square root. The table lists this coefficient-bound ceiling, not a performance,
+memory-capacity, or hardware-validation guarantee. GFPS automatically selects
+three primes when sufficient, otherwise four; the table uses all four.
+
+| n | Exponent 2^n | Maximum even b under the four-prime CRT bound |
+| ---: | ---: | ---: |
+| 10 | 1,024 | 33,568,080,211,080,892 |
+| 11 | 2,048 | 23,736,217,148,669,252 |
+| 12 | 4,096 | 16,784,040,105,540,446 |
+| 13 | 8,192 | 11,868,108,574,334,626 |
+| 14 | 16,384 | 8,392,020,052,770,222 |
+| 15 | 32,768 | 5,934,054,287,167,312 |
+| 16 | 65,536 | 4,196,010,026,385,110 |
+| 17 | 131,072 | 2,967,027,143,583,656 |
+| 18 | 262,144 | 2,098,005,013,192,554 |
+| 19 | 524,288 | 1,483,513,571,791,828 |
+| 20 | 1,048,576 | 1,049,002,506,596,276 |
+| >20 | — | Not supported |
+
+**GFPS 4.1 currently accepts only `1 <= n <= 20`. Inputs with `n > 20` are not supported.**
+
+For each supported row, the displayed even base passes the exact CRT inequality and
+`b_max + 2` fails. For example, at `n=16`, `4196010026385110` is the ceiling;
+`4196010026385112` is rejected with
+`CRT dynamic range is insufficient for this base/n; refusing unsafe calculation`.
+The production guard runs before GPU allocation and does not continue with an
+out-of-range CRT reconstruction. Omit digit-grouping commas in CLI arguments.
+
+> 中文说明：表中列出 n=10～20 的偶数 base 上限；**n>20 不支持**。
+> 表中 n 是指数 2^n 的下标；n=16 对应 b^65536+1。
+> `b<2^63` 不代表可计算到该值，实际还需满足表中的 CRT 上限。
+> 超限会由正式计算路径精确检查并报错退出；`--analyze` 的浮点估计不能作为紧贴边界时的判定依据。
 
 Run `./GFPS` without arguments to print the authoritative command summary for the exact binary being used.

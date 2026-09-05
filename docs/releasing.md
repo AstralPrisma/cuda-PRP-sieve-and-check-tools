@@ -1,21 +1,23 @@
 # Releasing
 
 The repository stores source code and documentation. Linux binaries belong in
-GitHub Releases and must not be committed to the main Git history.
+GitHub Releases and must not be committed to the main Git history. This applies
+to both Linux executables and Windows `.exe` files.
 
 ## Versioning
 
-The four tools have independent component versions:
+The five tools have independent component versions:
 
 | Tool | Current component version |
 | --- | ---: |
-| GFPS | 4.0 |
-| GSRPS | 2.0 |
+| GFPS | 4.1 |
+| GSRPS | 2.3 |
+| GFNSV | 1.0 |
 | GSRSV | 2.0 |
 | GNCWSV | 1.0 |
 
 Use a suite tag such as `v2026.09.0` for a coordinated repository release and
-list all four component versions in its notes. Increment the final field for a
+list all five component versions in its notes. Increment the final field for a
 rebuild or packaging correction that does not change every component.
 
 ## Pre-release checklist
@@ -58,6 +60,7 @@ Current prepared coverage is:
 | --- | :---: | :---: | :---: | :---: |
 | GFPS | built | built | built | built |
 | GSRPS | built | built | built | built |
+| GFNSV | built | built | built | built |
 | GSRSV | built | built | built | built |
 | GNCWSV | built | built | built | built |
 
@@ -75,10 +78,12 @@ Use lowercase, explicit, sortable names. A component package contains all four
 native SM variants for one operating system:
 
 ```text
-gfps-4.0-linux-x86_64-cuda13.3.tar.xz
-gfps-4.0-windows-x86_64-cuda13.3.zip
-gsrps-2.0-linux-x86_64-cuda13.3.tar.xz
-gsrps-2.0-windows-x86_64-cuda13.3.zip
+gfps-4.1-linux-x86_64-cuda13.3.tar.xz
+gfps-4.1-windows-x86_64-cuda13.3.zip
+gsrps-2.3-linux-x86_64-cuda13.3.tar.xz
+gsrps-2.3-windows-x86_64-cuda13.3.zip
+gfnsv-1.0-linux-x86_64-cuda13.3.tar.xz
+gfnsv-1.0-windows-x86_64-cuda13.3.zip
 ```
 
 Replace `cuda13.3` with the actual toolkit used by that release. Do not use a
@@ -121,9 +126,9 @@ At minimum, `manifest.json` should record for every artifact:
 
 ```json
 {
-  "file": "gfps-4.0-linux-x86_64-cuda13.3.tar.xz",
+  "file": "gfps-4.1-linux-x86_64-cuda13.3.tar.xz",
   "tool": "GFPS",
-  "component_version": "4.0",
+  "component_version": "4.1",
   "source_commit": "<full commit id>",
   "source_sha256": "<sha256>",
   "artifact_sha256": "<sha256>",
@@ -137,6 +142,10 @@ At minimum, `manifest.json` should record for every artifact:
 
 Populate test fields from evidence; never turn `runtime_tested` on merely
 because compilation succeeded.
+
+The manifest also includes a `source_files` map for each component. Record the
+SHA-256 of every CUDA source and local header, including GFNSV's state codec;
+hashing only the `.cu` file would miss a checkpoint-header change.
 
 ## Release verification
 
@@ -153,7 +162,41 @@ Then run the applicable `--version`, help, self-test, known-checksum, and small
 sieve tests. Confirm that the archive contains no generated checkpoint, factor,
 candidate, result, cache, or log file.
 
-After producing raw binaries with the build scripts, create the eight
+After producing raw binaries with the build scripts, record their provenance
+in `raw/build-metadata.json` (or pass `-BuildMetadataPath`). The packager
+requires one `builds["<TOOL>/<linux|windows>"]` entry for each component/platform:
+
+```json
+{
+  "builds": {
+    "GFPS/linux": {
+      "compiler": "<actual host compiler and nvcc versions>",
+      "cuda_toolkit": "13.3.33",
+      "flags": ["<actual compiler flags>"],
+      "source_files": {"src/GFPS.cu": "<sha256>"},
+      "test_hardware": "<actual GPU, or empty when not runtime-tested>",
+      "binaries": [
+        {
+          "file": "GFPS_sm_89",
+          "sha256": "<sha256>",
+          "runtime_tested": false,
+          "evidence": "Cross-compiled; device target inspected; no runtime test."
+        }
+      ]
+    }
+  }
+}
+```
+
+The fragment above illustrates the schema, not a complete matrix. Include all
+four target records for each of the ten component/platform entries, and all
+local source/header hashes. Mark runtime-tested only after testing that exact
+binary or verifying it is byte-identical to a previously tested artifact.
+The packager rejects missing provenance or mismatched source/binary hashes;
+it never infers test success from an `sm_89` filename. Keep local private paths
+out of compiler flags and evidence text because these fields are published.
+
+Then create the ten
 component/platform archives, source archive, manifest, and checksums with:
 
 ```powershell
@@ -168,7 +211,7 @@ release with a command shaped like:
 ```bash
 gh auth status
 gh release create v2026.09.0 \
-  --title 'CUDA PRP and sieve tools 2026.09.0' \
+  --title 'CUDA PRP: sieve and check tools 2026.09.0' \
   --notes-file release-notes.md \
   release-assets/*
 ```

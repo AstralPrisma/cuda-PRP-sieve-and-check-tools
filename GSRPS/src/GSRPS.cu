@@ -27,6 +27,7 @@
 #include <iostream>
 #include <iomanip>
 #include <limits>
+#include <numeric>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -1925,6 +1926,74 @@ __global__ void emit_div_radix_multiple_kernel(const int64_t* product_digits, in
     if (i == 0) *final_remainder = rem;
 }
 
+// Divide by a factor S of R with only neighboring digits.  The remaining
+// divisor K is coprime to R, allowing its prefix remainders to use a weighted
+// integer sum rather than an affine-map scan.
+__device__ __forceinline__ uint64_t prescaled_div_digit(
+    const int64_t* digits, int high_offset, int high_count, int i,
+    uint64_t radix, uint32_t smooth, uint64_t smooth_reciprocal) {
+    const uint64_t digit = static_cast<uint64_t>(digits[high_offset + i]);
+    if (smooth == 1) return digit;
+    uint64_t q = __umul64hi(digit, smooth_reciprocal);
+    uint64_t rem = digit - q * smooth;
+    if (rem >= smooth) ++q;
+    if (i + 1 < high_count) {
+        const uint64_t next = static_cast<uint64_t>(digits[high_offset + i + 1]);
+        q += mod_runtime_barrett(next, smooth, smooth_reciprocal) * (radix / smooth);
+    }
+    return q;
+}
+
+__global__ void make_weighted_div_sum_kernel(
+    const int64_t* digits, int high_offset, int high_count, uint64_t radix,
+    uint32_t smooth, uint64_t smooth_reciprocal, uint32_t divisor,
+    uint64_t reciprocal, const uint32_t* inverse_powers, uint64_t* values) {
+    const int scan = blockIdx.x * blockDim.x + threadIdx.x;
+    if (scan >= high_count) return;
+    const uint64_t digit = prescaled_div_digit(digits, high_offset, high_count,
+        high_count - 1 - scan, radix, smooth, smooth_reciprocal);
+    values[scan] = mod_runtime_barrett(digit * inverse_powers[scan], divisor, reciprocal);
+}
+
+__global__ void emit_weighted_div_sum_kernel(
+    const int64_t* digits, int high_offset, int high_count, uint64_t radix,
+    uint32_t smooth, uint64_t smooth_reciprocal, uint32_t divisor,
+    uint64_t reciprocal, const uint32_t* powers, const uint64_t* prefix,
+    uint64_t* quotient, uint64_t* final_remainder) {
+    const int scan = blockIdx.x * blockDim.x + threadIdx.x;
+    if (scan >= high_count) return;
+    const int i = high_count - 1 - scan;
+    const uint64_t sum = mod_runtime_barrett(prefix[scan], divisor, reciprocal);
+    const uint64_t incoming = scan == 0 ? 0 : mod_runtime_barrett(sum * powers[scan - 1], divisor, reciprocal);
+    const uint64_t digit = prescaled_div_digit(digits, high_offset, high_count,
+        i, radix, smooth, smooth_reciprocal);
+    const uint64_t current = incoming * radix + digit;
+    uint64_t q = __umul64hi(current, reciprocal);
+    uint64_t rem = current - q * divisor;
+    if (rem >= divisor) { rem -= divisor; ++q; }
+    quotient[i] = q;
+    if (i == 0) {
+        const uint64_t smooth_rem = mod_runtime_barrett(
+            static_cast<uint64_t>(digits[high_offset]), smooth, smooth_reciprocal);
+        *final_remainder = rem * smooth + smooth_rem;
+    }
+}
+
+uint32_t inverse_mod_coprime_host(uint32_t value, uint32_t modulus) {
+    int64_t old_r = modulus, r = value;
+    int64_t old_t = 0, t = 1;
+    while (r != 0) {
+        const int64_t q = old_r / r;
+        const int64_t next_r = old_r - q * r;
+        const int64_t next_t = old_t - q * t;
+        old_r = r; r = next_r; old_t = t; t = next_t;
+    }
+    if (old_r != 1) throw std::runtime_error("weighted scan radix is not invertible");
+    old_t %= modulus;
+    if (old_t < 0) old_t += modulus;
+    return static_cast<uint32_t>(old_t);
+}
+
 __device__ __forceinline__ int64_t floor_div_radix_recip(int64_t value, uint64_t radix,
                                                           uint64_t reciprocal, int64_t& digit) {
     const bool negative = value < 0;
@@ -2095,6 +2164,143 @@ struct BorrowMap {
     uint32_t f0;
     uint32_t f1;
 };
+
+// When fold_divisor <= radix, every raw folded coefficient belongs to
+// [1-R, 2R-2] (the low +1 digit permits R, still within the same carry bound).
+// The incoming/outgoing carry domain is therefore exactly {-1,0,1}.
+// Pack its three images in six bits and compose with integer shifts only.
+__host__ __device__ __forceinline__ int compact_carry_eval(uint32_t map, int x) {
+    return int((map >> (2 * (x + 1))) & 3u) - 1;
+}
+struct CompactCarryCompose {
+    __host__ __device__ __forceinline__ uint32_t operator()(uint32_t left, uint32_t right) const {
+        uint32_t result = 0;
+        for (int i = 0; i < 3; ++i) {
+            const uint32_t intermediate = (left >> (i * 2)) & 3u;
+            result |= ((right >> (intermediate * 2)) & 3u) << (i * 2);
+        }
+        return result;
+    }
+};
+struct CompactDualCompose {
+    __host__ __device__ __forceinline__ uint32_t operator()(uint32_t left, uint32_t right) const {
+        CompactCarryCompose compose;
+        return compose(left & 63u, right & 63u) |
+            (compose(left >> 6, right >> 6) << 6);
+    }
+};
+__device__ __forceinline__ uint32_t pack_compact_carry(int carry, bool zero, bool maximum) {
+    return uint32_t(carry + 1 - zero) | (uint32_t(carry + 1) << 2) |
+        (uint32_t(carry + 1 + maximum) << 4);
+}
+__global__ void compact_dual_prepare_kernel(
+    int64_t* product_digits, const uint64_t* quotient, const uint64_t* remainder,
+    const int64_t* modulus_digits, int64_t* subtracted, uint32_t* maps,
+    int low_count, int quotient_count, int active, int folded_count, int c,
+    uint64_t radix, uint64_t reciprocal) {
+    const int segment = blockIdx.x * blockDim.x + threadIdx.x;
+    const int begin = segment * kExactCarrySegment;
+    if (begin >= folded_count) return;
+    const int end = min(folded_count, begin + kExactCarrySegment);
+    int64_t carry = 0;
+    int borrow = 0;
+    bool zero_y = true, max_y = true, zero_z = true, max_z = true;
+    for (int i = begin; i < end; ++i) {
+        const int64_t coeff = build_folded_value(product_digits, quotient, remainder,
+            modulus_digits, i, low_count, quotient_count, active, folded_count, c);
+        int64_t y = 0;
+        carry = floor_div_radix_recip(coeff + carry, radix, reciprocal, y);
+        // Every thread reads only its own product positions; after the read,
+        // the product buffer can safely hold the zero-incoming Y digits.
+        product_digits[i] = y;
+        int64_t z = y - (i < active ? modulus_digits[i] : 0) - borrow;
+        borrow = z < 0;
+        if (borrow) z += radix;
+        subtracted[i] = z;
+        zero_y &= y == 0; max_y &= uint64_t(y) == radix - 1;
+        zero_z &= z == 0; max_z &= uint64_t(z) == radix - 1;
+    }
+    maps[segment] = pack_compact_carry(carry, zero_y, max_y) |
+        (pack_compact_carry(carry - borrow, zero_z, max_z) << 6);
+}
+__global__ void compact_dual_emit_kernel(
+    const int64_t* original, const int64_t* subtracted, int64_t* result,
+    const uint32_t* prefix, uint32_t* r0, uint32_t* r1,
+    int folded_count, int active, int len, int64_t radix) {
+    constexpr uint32_t p0 = 998244353u, p1 = 1004535809u;
+    constexpr uint32_t r2_0 = 932051910u, r2_1 = 542374313u;
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= len) return;
+    int64_t digit = 0;
+    if (i < folded_count) {
+        const int segment_count = (folded_count + kExactCarrySegment - 1) / kExactCarrySegment;
+        const bool use_subtracted = compact_carry_eval(prefix[segment_count - 1] >> 6, 0) >= 0;
+        const int64_t* source = use_subtracted ? subtracted : original;
+        const int segment = i / kExactCarrySegment;
+        const int begin = segment * kExactCarrySegment;
+        int carry = 0;
+        if (segment > 0) {
+            const uint32_t map = prefix[segment - 1];
+            carry = compact_carry_eval(use_subtracted ? map >> 6 : map & 63u, 0);
+        }
+        // Carries are only -1,0,+1; propagation stops at the first non-extreme
+        // digit.  Immutable sources avoid an inter-thread read/write race.
+        for (int j = begin; j < i && carry != 0; ++j) {
+            const int64_t value = source[j] + carry;
+            carry = value < 0 ? -1 : (value >= radix ? 1 : 0);
+        }
+        digit = source[i] + carry;
+        if (digit < 0) digit += radix;
+        else if (digit >= radix) digit -= radix;
+    }
+    result[i] = digit;
+    const uint32_t d = i < active ? uint32_t(digit) : 0u;
+    r0[i] = mul_mod_mont_2prime(d, r2_0, p0);
+    r1[i] = mul_mod_mont_2prime(d, r2_1, p1);
+}
+__global__ void compact_folded_prepare_kernel(
+    const int64_t* product_digits, const uint64_t* quotient, const uint64_t* remainder,
+    const int64_t* modulus_digits, int64_t* digits, uint32_t* maps,
+    int low_count, int quotient_count, int active, int folded_count, int c,
+    uint64_t radix, uint64_t reciprocal) {
+    const int segment = blockIdx.x * blockDim.x + threadIdx.x;
+    const int begin = segment * kExactCarrySegment;
+    if (begin >= folded_count) return;
+    const int end = min(folded_count, begin + kExactCarrySegment);
+    int64_t carry = 0;
+    bool all_zero = true, all_max = true;
+    for (int i = begin; i < end; ++i) {
+        int64_t digit = 0;
+        const int64_t coeff = build_folded_value(product_digits, quotient, remainder,
+            modulus_digits, i, low_count, quotient_count, active, folded_count, c);
+        carry = floor_div_radix_recip(coeff + carry, radix, reciprocal, digit);
+        digits[i] = digit;
+        all_zero &= digit == 0;
+        all_max &= static_cast<uint64_t>(digit) == radix - 1;
+    }
+    maps[segment] = static_cast<uint32_t>(carry + 1 - all_zero) |
+        (static_cast<uint32_t>(carry + 1) << 2) |
+        (static_cast<uint32_t>(carry + 1 + all_max) << 4);
+}
+__global__ void compact_folded_apply_borrow_kernel(
+    int64_t* digits, const uint32_t* prefix, const int64_t* modulus,
+    BorrowMap* borrow_maps, int canonical_count, int folded_count,
+    uint64_t radix, uint64_t reciprocal) {
+    const int segment = blockIdx.x * blockDim.x + threadIdx.x;
+    const int begin = segment * kExactCarrySegment;
+    if (begin >= folded_count) return;
+    int64_t carry = segment == 0 ? 0 : compact_carry_eval(prefix[segment - 1], 0);
+    const int end = min(folded_count, begin + kExactCarrySegment);
+    for (int i = begin; i < end; ++i) {
+        int64_t digit = 0;
+        carry = floor_div_radix_recip(digits[i] + carry, radix, reciprocal, digit);
+        digits[i] = digit;
+        if (i < canonical_count) {
+            borrow_maps[i] = {static_cast<uint32_t>(digit < modulus[i]),
+                              static_cast<uint32_t>(digit <= modulus[i])};
+        }
+    }
+}
 
 struct BorrowCompose {
     __device__ __forceinline__ BorrowMap operator()(const BorrowMap& left,
@@ -2513,7 +2719,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
     const uint64_t divisor = k * d;
     if (divisor == 0 || divisor > UINT32_MAX) throw std::runtime_error("fold divisor out of 32-bit range");
     if (low64 == 0) throw std::runtime_error("selected radix leaves no low limbs; exponent is too small for full benchmark");
-    if (low64 > (uint64_t(1) << 20)) throw std::runtime_error("active limb count exceeds prototype range");
+    if (low64 > (uint64_t(1) << 20)) throw std::runtime_error("active limb count exceeds the supported range");
     const int low_count = static_cast<int>(low64);
 
     std::vector<uint64_t> divisor_digits;
@@ -2561,6 +2767,20 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
     const int coeff_count = 2 * active - 1;
     const int product_count = 2 * active;
     const int high_count = product_count - low_count;
+    const int compact_folded_count = std::max(canonical_count, high_count);
+    const int compact_segment_count = (compact_folded_count + kExactCarrySegment - 1) / kExactCarrySegment;
+    // The only potentially large folded coefficient is the remainder at
+    // low_count.  Reserve one complete digit after all digits of D in its
+    // carry segment.  Then Y and Y-N both map {-1,0,1} into {-1,0,1} at every
+    // segment boundary even when intermediate carries are larger.
+    // D<=R is the original independently sufficient pointwise bound.
+    const int remainder_segment_end = std::min(compact_folded_count,
+        ((low_count / kExactCarrySegment) + 1) * kExactCarrySegment);
+    const int guard_exponent = std::max(0, remainder_segment_end - low_count - 1);
+    uint64_t guarded_divisor_limit = 1;
+    for (int i = 0; i < guard_exponent && guarded_divisor_limit < divisor; ++i)
+        guarded_divisor_limit *= radix; // previous < D <= 2^32, R < 2^30
+    const bool compact_carry_enabled = divisor <= radix || divisor <= guarded_divisor_limit;
     const boost::multiprecision::uint128_t coefficient_bound =
         boost::multiprecision::uint128_t(active) * (radix - 1) * (radix - 1);
     const boost::multiprecision::uint128_t crt_product =
@@ -2846,12 +3066,17 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
     void* unsigned_carry_scan_temp = nullptr;
     size_t unsigned_carry_scan_temp_bytes = 0;
     SignedCarryMap *signed_carry_maps = nullptr, *signed_carry_prefix = nullptr;
+    uint32_t *compact_maps = nullptr, *compact_prefix = nullptr;
+    int64_t* compact_subtracted = nullptr;
+    void* compact_scan_temp = nullptr;
+    size_t compact_scan_bytes = 0;
     void* signed_carry_scan_temp = nullptr;
     size_t signed_carry_scan_temp_bytes = 0;
     AffineModMap *div_maps = nullptr, *div_prefix = nullptr;
     void* div_scan_temp = nullptr;
     size_t div_scan_temp_bytes = 0;
     uint64_t *div_sum_values = nullptr, *div_sum_prefix = nullptr;
+    uint32_t *div_powers = nullptr, *div_inverse_powers = nullptr;
     void* div_sum_temp = nullptr;
     size_t div_sum_temp_bytes = 0;
     BorrowMap *borrow_maps = nullptr, *borrow_prefix = nullptr;
@@ -2873,10 +3098,13 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
         cudaFree(borrow_prefix); cudaFree(borrow_maps);
         cudaFree(remainder); cudaFree(quotient);
         cudaFree(signed_carry_scan_temp);
+        cudaFree(compact_scan_temp); cudaFree(compact_maps); cudaFree(compact_prefix);
+        cudaFree(compact_subtracted);
         cudaFree(signed_carry_prefix); cudaFree(signed_carry_maps);
         cudaFree(unsigned_carry_scan_temp);
         cudaFree(unsigned_carry_prefix); cudaFree(unsigned_carry_maps);
         cudaFree(div_sum_temp); cudaFree(div_sum_prefix); cudaFree(div_sum_values);
+        cudaFree(div_powers); cudaFree(div_inverse_powers);
         cudaFree(div_scan_temp); cudaFree(div_prefix); cudaFree(div_maps);
         cudaFree(folded); cudaFree(modulus_d); cudaFree(digits); cudaFree(raw_coeff);
         cudaFree(inv1); cudaFree(inv0); cudaFree(fwd1); cudaFree(fwd0);
@@ -2904,6 +3132,15 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
         cuda_check(cudaMalloc(&digits, sizeof(int64_t) * len), "full malloc digits");
         cuda_check(cudaMalloc(&modulus_d, sizeof(int64_t) * canonical_count), "full malloc modulus");
         cuda_check(cudaMalloc(&folded, sizeof(int64_t) * len), "full malloc folded");
+        const CompactDualCompose compact_compose{};
+        if (compact_carry_enabled) {
+            cuda_check(cudaMalloc(&compact_subtracted, compact_folded_count * sizeof(int64_t)), "compact malloc subtracted");
+            cuda_check(cudaMalloc(&compact_maps, compact_segment_count * sizeof(uint32_t)), "compact malloc maps");
+            cuda_check(cudaMalloc(&compact_prefix, compact_segment_count * sizeof(uint32_t)), "compact malloc prefix");
+            cuda_check(cub::DeviceScan::InclusiveScan(nullptr, compact_scan_bytes,
+                compact_maps, compact_prefix, compact_compose, compact_segment_count, stream), "compact query scan");
+            cuda_check(cudaMalloc(&compact_scan_temp, compact_scan_bytes), "compact malloc scan");
+        }
         cuda_check(cudaMalloc(&quotient, sizeof(uint64_t) * high_count), "full malloc quotient");
         cuda_check(cudaMalloc(&remainder, sizeof(uint64_t)), "full malloc remainder");
         cuda_check(cudaMalloc(&unsigned_carry_maps,
@@ -2942,16 +3179,42 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
         const int exact_positions = radix_u64_exact_positions(radix);
         const bool use_radix_multiple = (radix % divisor) == 0;
         const bool use_sum_scan = !use_radix_multiple && (radix % divisor) == 1;
+        const uint32_t smooth_divisor = static_cast<uint32_t>(std::gcd(radix, divisor));
+        const uint32_t weighted_divisor = divisor32 / smooth_divisor;
+        const uint64_t smooth_reciprocal = smooth_divisor == 1 ? 0 : UINT64_MAX / smooth_divisor;
+        const uint64_t weighted_reciprocal = weighted_divisor == 1 ? 0 : UINT64_MAX / weighted_divisor;
+        const bool use_weighted_scan = !use_radix_multiple && !use_sum_scan &&
+            weighted_divisor > 1 && std::gcd(radix, uint64_t(weighted_divisor)) == 1;
+        if (use_weighted_scan) {
+            // high_count <= 2^21+64 and K <= 2^32-1, hence the exact prefix
+            // sum of residues < K fits safely in uint64_t (< 2^54).
+            if (static_cast<uint64_t>(high_count) > UINT64_MAX / (weighted_divisor - 1))
+                throw std::runtime_error("weighted scan prefix sum exceeds uint64_t");
+            const uint64_t residue_radix = radix % weighted_divisor;
+            const uint64_t inverse = inverse_mod_coprime_host(residue_radix, weighted_divisor);
+            std::vector<uint32_t> host_powers(high_count), host_inverse(high_count);
+            uint64_t forward = 1, backward = 1;
+            for (int i = 0; i < high_count; ++i) {
+                host_powers[i] = static_cast<uint32_t>(forward);
+                host_inverse[i] = static_cast<uint32_t>(backward);
+                forward = forward * residue_radix % weighted_divisor;
+                backward = backward * inverse % weighted_divisor;
+            }
+            cuda_check(cudaMalloc(&div_powers, high_count * sizeof(uint32_t)), "weighted malloc powers");
+            cuda_check(cudaMalloc(&div_inverse_powers, high_count * sizeof(uint32_t)), "weighted malloc inverse");
+            cuda_check(cudaMemcpy(div_powers, host_powers.data(), high_count * sizeof(uint32_t), cudaMemcpyHostToDevice), "weighted copy powers");
+            cuda_check(cudaMemcpy(div_inverse_powers, host_inverse.data(), high_count * sizeof(uint32_t), cudaMemcpyHostToDevice), "weighted copy inverse");
+        }
         const AffineCompose compose{divisor32, divisor_reciprocal};
         const AffineModMap identity{static_cast<uint32_t>(1 % divisor), 0};
-        if (!use_radix_multiple && !use_sum_scan) {
+        if (!use_radix_multiple && !use_sum_scan && !use_weighted_scan) {
             cuda_check(cudaMalloc(&div_maps, sizeof(AffineModMap) * high_count), "full malloc div maps");
             cuda_check(cudaMalloc(&div_prefix, sizeof(AffineModMap) * high_count), "full malloc div prefix");
             cuda_check(cub::DeviceScan::ExclusiveScan(nullptr, div_scan_temp_bytes,
                                                        div_maps, div_prefix, compose, identity, high_count),
                        "full query div scan temp");
             cuda_check(cudaMalloc(&div_scan_temp, div_scan_temp_bytes), "full malloc div scan temp");
-        } else if (use_sum_scan) {
+        } else if (use_sum_scan || use_weighted_scan) {
             cuda_check(cudaMalloc(&div_sum_values, sizeof(uint64_t) * high_count), "full malloc div sum values");
             cuda_check(cudaMalloc(&div_sum_prefix, sizeof(uint64_t) * high_count), "full malloc div sum prefix");
             cuda_check(cub::DeviceScan::ExclusiveSum(nullptr, div_sum_temp_bytes,
@@ -3061,6 +3324,15 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                 emit_div_radix_multiple_kernel<<<div_blocks, threads, 0, stream>>>(digits, low_count, high_count,
                                                                          radix / divisor, divisor32,
                                                                          divisor_reciprocal, quotient, remainder);
+            } else if (use_weighted_scan) {
+                make_weighted_div_sum_kernel<<<div_blocks, threads, 0, stream>>>(
+                    digits, low_count, high_count, radix, smooth_divisor, smooth_reciprocal,
+                    weighted_divisor, weighted_reciprocal, div_inverse_powers, div_sum_values);
+                cuda_check(cub::DeviceScan::ExclusiveSum(div_sum_temp, div_sum_temp_bytes,
+                    div_sum_values, div_sum_prefix, high_count, stream), "weighted exact sum scan");
+                emit_weighted_div_sum_kernel<<<div_blocks, threads, 0, stream>>>(
+                    digits, low_count, high_count, radix, smooth_divisor, smooth_reciprocal,
+                    weighted_divisor, weighted_reciprocal, div_powers, div_sum_prefix, quotient, remainder);
             } else if (use_sum_scan) {
                 make_div_sum_values_kernel<<<div_blocks, threads, 0, stream>>>(digits, low_count, high_count, div_sum_values);
                 cuda_check(cub::DeviceScan::ExclusiveSum(div_sum_temp, div_sum_temp_bytes,
@@ -3095,6 +3367,17 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                     throw std::runtime_error("debug stage mismatch: fixed-divisor scan");
                 }
             }
+            if (compact_carry_enabled) {
+                const int compact_blocks = (compact_segment_count + threads - 1) / threads;
+                compact_dual_prepare_kernel<<<compact_blocks, threads, 0, stream>>>(
+                    digits, quotient, remainder, modulus_d, compact_subtracted, compact_maps,
+                    low_count, high_count, active, compact_folded_count, c, radix, radix_reciprocal);
+                cuda_check(cub::DeviceScan::InclusiveScan(compact_scan_temp, compact_scan_bytes,
+                    compact_maps, compact_prefix, compact_compose, compact_segment_count, stream), "compact signed carry scan");
+                compact_dual_emit_kernel<<<blocks, threads, 0, stream>>>(
+                    digits, compact_subtracted, folded, compact_prefix, r0, r1,
+                    compact_folded_count, active, len, radix);
+            } else {
             folded_signed_segment_prepare_kernel<<<carry_segment_blocks, threads, 0, stream>>>(
                 digits, quotient, remainder, modulus_d, folded,
                 signed_carry_maps,
@@ -3116,6 +3399,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
             emit_conditional_subtract_and_rns2_mont_kernel<<<blocks, threads, 0, stream>>>(
                 folded, modulus_d, borrow_prefix, r0, r1,
                 canonical_count, active, len, radix);
+            }
         };
 
         if (check_mode && !ntt_blocks_are_forced()) {
@@ -4305,7 +4589,7 @@ void display_banner() {
     printf("%s\n","    `Y8bood8P'   Y8P 8''88888P'  Y8P o888o  o888o Y8P o888o        Y8P 8''88888P'  Y8P  ");
     printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                       Generalized-Sierpinski/Riesel-Prime-Seeker                       ");
-    printf("%s\n","                           Version 2.0 CUDA by A.P. Sept 2026                           ");
+    printf("%s\n","                           Version 2.3 CUDA by A.P. Sept 2026                           ");
 }
 
 void usage(const char* argv0) {

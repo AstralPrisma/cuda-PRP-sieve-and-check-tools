@@ -2,7 +2,8 @@
 param(
     [string]$SuiteVersion = "v2026.09.0",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages")
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
+    [string]$BuildMetadataPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,12 +14,20 @@ $releaseRoot = [IO.Path]::GetFullPath((Join-Path $repoDirectory "release-assets"
 $stagingPath = Join-Path $releaseRoot "package-staging"
 $architectures = @("sm_86", "sm_89", "sm_100", "sm_120")
 $versions = [ordered]@{
-    GFPS = "4.0"
-    GSRPS = "2.0"
+    GFPS = "4.1"
+    GSRPS = "2.3"
+    GFNSV = "1.0"
     GSRSV = "2.0"
     GNCWSV = "1.0"
 }
 $utf8 = New-Object Text.UTF8Encoding($false)
+$metadataPath = if ($BuildMetadataPath) { [IO.Path]::GetFullPath($BuildMetadataPath) } else { Join-Path $rawPath "build-metadata.json" }
+if (-not [IO.File]::Exists($metadataPath)) {
+    throw "Missing build provenance: $metadataPath. Record actual compiler, flags, source and binary hashes, and runtime evidence before packaging."
+}
+$buildMetadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+if (-not $buildMetadata.builds) { throw "Build metadata must contain a builds object" }
+$stagingCreated = $false
 
 function Assert-ChildPath([string]$Path, [string]$Parent) {
     $parentPrefix = $Parent.TrimEnd('\') + '\'
@@ -46,6 +55,16 @@ function Get-Sha256([string]$Path) {
     }
 }
 
+function Get-SourceFiles([string]$Tool) {
+    $sourceDirectory = Join-Path $repoDirectory "$Tool\src"
+    $records = [ordered]@{}
+    Get-ChildItem -LiteralPath $sourceDirectory -File |
+        Where-Object { $_.Extension -in @(".cu", ".cuh", ".h", ".hpp") } |
+        Sort-Object Name |
+        ForEach-Object { $records["src/$($_.Name)"] = Get-Sha256 $_.FullName }
+    return $records
+}
+
 function Invoke-External([scriptblock]$Command, [string]$Description) {
     & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE" }
@@ -55,19 +74,57 @@ Push-Location $repoDirectory
 try {
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $commit) { throw "Cannot resolve the source commit" }
-    if (git status --porcelain --untracked-files=no) {
-        throw "Tracked working tree changes are present; commit them before packaging"
+    if (git status --porcelain) {
+        throw "Working tree changes or untracked source files are present; review and commit them before release packaging"
+    }
+    $sourceEpoch = (& git show -s --format=%ct HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $sourceEpoch -notmatch '^\d+$') { throw "Cannot resolve source commit timestamp" }
+
+    # Validate the full provenance matrix before replacing any package directory.
+    foreach ($tool in $versions.Keys) {
+        $sourceFiles = Get-SourceFiles $tool
+        foreach ($platform in @("linux", "windows")) {
+            $key = "$tool/$platform"
+            $property = $buildMetadata.builds.PSObject.Properties[$key]
+            if (-not $property) { throw "Missing build metadata for $key" }
+            $record = $property.Value
+            if (-not $record.compiler -or -not $record.cuda_toolkit -or -not $record.flags -or -not $record.source_files) {
+                throw "Incomplete compiler/flags/source metadata for $key"
+            }
+            if ($record.cuda_toolkit -notmatch '^13\.3(?:\.|$)') { throw "This archive naming scheme requires CUDA 13.3: $key" }
+            $recordedSourceNames = @($record.source_files.PSObject.Properties.Name)
+            if ($recordedSourceNames.Count -ne $sourceFiles.Count) { throw "Source metadata file count mismatch: $key" }
+            foreach ($name in $sourceFiles.Keys) {
+                $sourceProperty = $record.source_files.PSObject.Properties[$name]
+                if (-not $sourceProperty -or $sourceProperty.Value -ne $sourceFiles[$name]) { throw "Source hash mismatch: $key $name" }
+            }
+            $suffix = if ($platform -eq "windows") { ".exe" } else { "" }
+            if (@($record.binaries).Count -ne $architectures.Count) { throw "Binary metadata count mismatch: $key" }
+            foreach ($arch in $architectures) {
+                $binaryName = "${tool}_${arch}${suffix}"
+                $entries = @($record.binaries | Where-Object { $_.file -eq $binaryName })
+                if ($entries.Count -ne 1) { throw "Missing or duplicate binary record: $key $binaryName" }
+                $entry = $entries[0]
+                if ($entry.runtime_tested -isnot [bool] -or -not $entry.evidence) { throw "Missing test status/evidence: $key $binaryName" }
+                $binaryPath = Join-Path (Join-Path $rawPath $platform) $binaryName
+                if ((Get-Sha256 $binaryPath) -ne $entry.sha256) { throw "Binary hash mismatch: $key $binaryName" }
+                if ($entry.runtime_tested -and -not $record.test_hardware) { throw "Runtime-tested builds require actual test hardware: $key" }
+            }
+        }
     }
 
     Remove-DirectoryIfPresent $stagingPath
     Remove-DirectoryIfPresent $outputPath
     [IO.Directory]::CreateDirectory($stagingPath) | Out-Null
+    $stagingCreated = $true
     [IO.Directory]::CreateDirectory($outputPath) | Out-Null
 
     $packageRecords = @()
     foreach ($tool in $versions.Keys) {
         $version = $versions[$tool]
+        $sourceFiles = Get-SourceFiles $tool
         foreach ($platform in @("linux", "windows")) {
+            $buildRecord = $buildMetadata.builds.PSObject.Properties["$tool/$platform"].Value
             $suffix = if ($platform -eq "windows") { ".exe" } else { "" }
             $hostPlatform = if ($platform -eq "windows") { "windows-x86_64" } else { "linux-x86_64" }
             $archiveExtension = if ($platform -eq "windows") { ".zip" } else { ".tar.xz" }
@@ -84,12 +141,14 @@ try {
                 $binaryName = "${tool}_${arch}${suffix}"
                 $sourceBinary = Join-Path (Join-Path $rawPath $platform) $binaryName
                 if (-not [IO.File]::Exists($sourceBinary)) { throw "Missing binary: $sourceBinary" }
+                $binaryMetadata = @($buildRecord.binaries | Where-Object { $_.file -eq $binaryName })[0]
                 [IO.File]::Copy($sourceBinary, (Join-Path $binStage $binaryName), $true)
                 $binaryRecords += [ordered]@{
                     file = "bin/$binaryName"
                     target = $arch
                     sha256 = Get-Sha256 $sourceBinary
-                    runtime_tested = ($arch -eq "sm_89")
+                    runtime_tested = $binaryMetadata.runtime_tested
+                    evidence = $binaryMetadata.evidence
                 }
             }
 
@@ -101,22 +160,22 @@ try {
                 [IO.File]::Copy($_.FullName, (Join-Path $licensesStage $_.Name), $true)
             }
 
-            $compiler = if ($platform -eq "windows") {
-                "MSVC 19.51.36248 (x64), nvcc 13.3.33"
-            } else {
-                "GCC 13.3.0 (x86_64), nvcc 13.3.33"
-            }
+            $compiler = $buildRecord.compiler
+            $testedTargets = @($binaryRecords | Where-Object { $_.runtime_tested } | ForEach-Object { $_.target })
             $buildInfo = @(
                 "Suite release: $SuiteVersion"
                 "Component: $tool $version"
                 "Source commit: $commit"
                 "Platform: $hostPlatform"
                 "Compiler: $compiler"
+                "CUDA Toolkit: $($buildRecord.cuda_toolkit)"
+                "Compiler flags: $($buildRecord.flags -join ' ')"
                 "CUDA targets: $($architectures -join ', ')"
-                "Runtime-tested target: sm_89"
-                "Test GPU: NVIDIA GeForce RTX 4060 Laptop GPU"
+                "Runtime-tested targets: $($testedTargets -join ', ')"
+                "Test GPU: $($buildRecord.test_hardware)"
                 "Source SHA-256: $(Get-Sha256 (Join-Path $repoDirectory "$tool\src\$tool.cu"))"
-                "Built with C++17, -O3, and per-thread default-stream semantics."
+                "Source file hashes: $($sourceFiles | ConvertTo-Json -Compress)"
+                "Runtime test evidence: $($buildRecord.binaries | ConvertTo-Json -Depth 5 -Compress)"
                 "Each binary contains native cubins and compiler-emitted PTX matched to its named target."
                 "Separate binaries are used instead of one universal executable for all GPU generations."
             )
@@ -130,7 +189,7 @@ try {
                 $stageWsl = (& wsl.exe -e wslpath -a $platformStage).Trim()
                 $archiveWsl = (& wsl.exe -e wslpath -a $archivePath).Trim()
                 Invoke-External {
-                    & wsl.exe -e tar --sort=name "--mtime=UTC 2026-09-03" --owner=0 --group=0 --numeric-owner `
+                    & wsl.exe -e env XZ_OPT=-T1 tar --sort=name "--mtime=@$sourceEpoch" --owner=0 --group=0 --numeric-owner `
                         "--mode=u+rwX,go+rX,go-w" -cJf $archiveWsl -C $stageWsl $rootName
                 } "Linux tar.xz packaging"
             }
@@ -141,12 +200,15 @@ try {
                 component_version = $version
                 source_commit = $commit
                 source_sha256 = Get-Sha256 (Join-Path $repoDirectory "$tool\src\$tool.cu")
+                source_files = $sourceFiles
                 artifact_sha256 = Get-Sha256 $archivePath
-                cuda_toolkit = "13.3.33"
+                compiler = $compiler
+                compiler_flags = @($buildRecord.flags)
+                cuda_toolkit = $buildRecord.cuda_toolkit
                 targets = $architectures
                 host = $hostPlatform
-                runtime_tested_targets = @("sm_89")
-                test_hardware = "NVIDIA GeForce RTX 4060 Laptop GPU"
+                runtime_tested_targets = $testedTargets
+                test_hardware = $buildRecord.test_hardware
                 binaries = $binaryRecords
             }
         }
@@ -156,7 +218,7 @@ try {
     $sourceTar = Join-Path $outputPath "$sourceBase.tar"
     Invoke-External { & git archive --format=tar "--prefix=$sourceBase/" -o $sourceTar HEAD } "Source archive"
     $sourceTarWsl = (& wsl.exe -e wslpath -a $sourceTar).Trim()
-    Invoke-External { & wsl.exe -e xz -f -9 $sourceTarWsl } "Source archive compression"
+    Invoke-External { & wsl.exe -e xz -T1 -f -9 $sourceTarWsl } "Source archive compression"
 
     $manifest = [ordered]@{
         suite_version = $SuiteVersion
@@ -175,5 +237,5 @@ try {
 }
 finally {
     Pop-Location
-    Remove-DirectoryIfPresent $stagingPath
+    if ($stagingCreated) { Remove-DirectoryIfPresent $stagingPath }
 }

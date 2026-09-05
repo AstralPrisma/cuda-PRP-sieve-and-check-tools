@@ -1,4 +1,4 @@
-# GSRPS
+# GSRPS 2.3
 
 GSRPS is a CUDA Fermat probable-prime checker for generalized Sierpinski/Riesel candidates
 
@@ -121,6 +121,18 @@ GSRPS_DISABLE_TUNING_CACHE=1
 The automatic tuner keys entries to the GPU, build, and arithmetic shape. Delete the cache or use `--no-tuning-cache` when diagnosing performance. A tuning cache is not a computation checkpoint and contains no partial PRP result.
 
 `--duty-percent` inserts rest time between GPU work intervals. It lowers sustained utilization at the cost of longer wall-clock time. Explicit `--force-*` values are intended for benchmarking or known hardware-specific choices; defaults are normally safer for portable runs.
+
+Version 2.3 uses weighted fixed-divisor scans and compact carry reduction when
+their exact range and guard conditions hold. Other shapes retain the original
+exact reduction. A larger radix is selected only when it passes the divisor
+and CRT checks and reduces the NTT length. These defaults apply to general
+bases; they do not require `b=2`, `b=10`, or `k<b`. Speedups depend on the
+candidate's arithmetic shape and GPU, so benchmark the actual candidate family.
+
+The existing tuning controls and checkpoint format remain available. A saved
+checkpoint must match the arithmetic layout reconstructed by the current
+binary; a layout mismatch is rejected explicitly. Keep the previous binary if
+you need to finish a checkpoint whose layout changed across versions.
 
 ## Benchmarks
 
