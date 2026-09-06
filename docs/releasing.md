@@ -6,18 +6,19 @@ to both Linux executables and Windows `.exe` files.
 
 ## Versioning
 
-The five tools have independent component versions:
+The six tools have independent component versions:
 
 | Tool | Current component version |
 | --- | ---: |
-| GFPS | 4.1 |
+| GFPS | 4.4 |
 | GSRPS | 2.3 |
+| GFPPS | 1.0 |
 | GFNSV | 1.0 |
 | GSRSV | 2.0 |
 | GNCWSV | 1.0 |
 
-Use a suite tag such as `v2026.09.0` for a coordinated repository release and
-list all five component versions in its notes. Increment the final field for a
+Use a suite tag such as `v2026.09.5` for a coordinated repository release and
+list all six component versions in its notes. Increment the final field for a
 rebuild or packaging correction that does not change every component.
 
 ## Pre-release checklist
@@ -60,6 +61,7 @@ Current prepared coverage is:
 | --- | :---: | :---: | :---: | :---: |
 | GFPS | built | built | built | built |
 | GSRPS | built | built | built | built |
+| GFPPS | built | built | built | built |
 | GFNSV | built | built | built | built |
 | GSRSV | built | built | built | built |
 | GNCWSV | built | built | built | built |
@@ -78,10 +80,12 @@ Use lowercase, explicit, sortable names. A component package contains all four
 native SM variants for one operating system:
 
 ```text
-gfps-4.1-linux-x86_64-cuda13.3.tar.xz
-gfps-4.1-windows-x86_64-cuda13.3.zip
+gfps-4.4-linux-x86_64-cuda13.3.tar.xz
+gfps-4.4-windows-x86_64-cuda13.3.zip
 gsrps-2.3-linux-x86_64-cuda13.3.tar.xz
 gsrps-2.3-windows-x86_64-cuda13.3.zip
+gfpps-1.0-linux-x86_64-cuda13.3.tar.xz
+gfpps-1.0-windows-x86_64-cuda13.3.zip
 gfnsv-1.0-linux-x86_64-cuda13.3.tar.xz
 gfnsv-1.0-windows-x86_64-cuda13.3.zip
 ```
@@ -113,7 +117,7 @@ The Release should also contain:
 ```text
 SHA256SUMS
 manifest.json
-cuda-prp-sieve-and-check-tools-v2026.09.0-source.tar.xz
+cuda-prp-sieve-and-check-tools-v2026.09.5-source.tar.xz
 ```
 
 GitHub's generated source archives point to the tag, but an explicit source
@@ -126,9 +130,9 @@ At minimum, `manifest.json` should record for every artifact:
 
 ```json
 {
-  "file": "gfps-4.1-linux-x86_64-cuda13.3.tar.xz",
+  "file": "gfps-4.4-linux-x86_64-cuda13.3.tar.xz",
   "tool": "GFPS",
-  "component_version": "4.1",
+  "component_version": "4.4",
   "source_commit": "<full commit id>",
   "source_sha256": "<sha256>",
   "artifact_sha256": "<sha256>",
@@ -144,7 +148,8 @@ Populate test fields from evidence; never turn `runtime_tested` on merely
 because compilation succeeded.
 
 The manifest also includes a `source_files` map for each component. Record the
-SHA-256 of every CUDA source and local header, including GFNSV's state codec;
+SHA-256 of every CUDA source and local header, including GFNSV's state codec
+and GFPPS's NTT and SHA-256 headers;
 hashing only the `.cu` file would miss a checkpoint-header change.
 
 ## Release verification
@@ -189,18 +194,18 @@ requires one `builds["<TOOL>/<linux|windows>"]` entry for each component/platfor
 ```
 
 The fragment above illustrates the schema, not a complete matrix. Include all
-four target records for each of the ten component/platform entries, and all
+four target records for each of the twelve component/platform entries, and all
 local source/header hashes. Mark runtime-tested only after testing that exact
 binary or verifying it is byte-identical to a previously tested artifact.
 The packager rejects missing provenance or mismatched source/binary hashes;
 it never infers test success from an `sm_89` filename. Keep local private paths
 out of compiler flags and evidence text because these fields are published.
 
-Then create the ten
-component/platform archives, source archive, manifest, and checksums with:
+Then create the twelve component/platform archives, source archive, manifest,
+and checksums (15 assets total) with:
 
 ```powershell
-scripts\package-release.ps1 -SuiteVersion v2026.09.0
+scripts\package-release.ps1 -SuiteVersion v2026.09.5
 ```
 
 ## Publishing with GitHub CLI
@@ -210,8 +215,8 @@ release with a command shaped like:
 
 ```bash
 gh auth status
-gh release create v2026.09.0 \
-  --title 'CUDA PRP: sieve and check tools 2026.09.0' \
+gh release create v2026.09.5 \
+  --title 'CUDA PRP: sieve and check tools 2026.09.5' \
   --notes-file release-notes.md \
   release-assets/*
 ```

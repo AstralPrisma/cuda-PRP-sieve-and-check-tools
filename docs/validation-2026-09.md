@@ -1,7 +1,7 @@
 # September 2026 local validation
 
-This record covers the GFPS 4.1 and GSRPS 2.3 arithmetic promotion and the
-GFNSV CUDA 1.0 sieve. It describes tested cases, not a guarantee that every
+This record covers the GFPS 4.1/4.4 and GSRPS 2.3 arithmetic promotions,
+GFPPS 1.0, and the GFNSV CUDA 1.0 sieve. It describes tested cases, not a guarantee that every
 parameter, device, or hardware execution is free of defects.
 
 ## Hardware and build coverage
@@ -11,6 +11,74 @@ Windows x64 and Linux/WSL x86-64 builds use CUDA 13.3, with MSVC and GCC host
 compilers respectively. `sm_86`, `sm_100`, and `sm_120` binaries were
 cross-compiled and their cubin targets checked; they were not executed on
 matching hardware.
+
+## GFPS 4.4 carry fusion
+
+The optimized batch path fuses carry rotation, convergence checking, and RNS
+export. It uses three carry kernels for the large-base case and retains four
+passes for small bases. The NTT, CRT capacity, rounding rule, special residue,
+and checkpoint format remain unchanged. Each accepted step satisfies the same
+fixed-point predicate as before; a failure is latched across the complete
+batch, restored, and independently replayed with adaptive normalization.
+
+The first WSL `sm_89` regression completed 27 runs: a self-test, eight small
+complete `cpp_int` comparisons including 101 and the pseudoprime 46657, twelve
+alternating benchmarks, and forced replay/Graph-disabled/negacyclic-disabled
+compatibility pairs. All six benchmark and three compatibility checkpoint
+pairs were byte-identical. An independent integer model checked 19,600 old/new
+fixed-point predicates; all matched, with 15,226 accepted congruent results
+and 4,374 properly rejected unconverged states.
+
+For three alternating 30,000-bit prefixes per mode, with NTT blocks fixed at
+96 on an RTX 4060 Laptop GPU and unrelated CPU PRST load:
+
+| b, n | GFPS 4.1 median | Fused carry median | Time reduction |
+| --- | ---: | ---: | ---: |
+| 1814570322984178, 16 (four primes) | 3.360 s | 2.631 s | 21.7% |
+| 100000000, 16 (three primes) | 3.115 s | 2.029 s | 34.9% |
+
+The complete million-digit `1814570322984178^65536+1` finished all 3,321,925
+exponent bits in 265.811 s (266.435 s process wall time), returning base-2 PRP.
+Five anchors at 0, 1,000,000, 2,000,000, 3,000,000, and the final bit were
+byte-identical to the validated GFPS 4.1 run. Final checkpoint SHA-256:
+
+`61a52137498e8729dba4fce2a5aec0b4e5fabead91a8c1e671edcd1980da8ce8`
+
+The earlier full 4.1 time was 356.581 s on another date; the apparent 25.5%
+time reduction is not a controlled same-session speed comparison. The
+alternating prefix measurements above provide the closer same-condition
+comparison. The fusion applies only to checked batches at 100% duty; these
+speedups should not be assumed for duty-throttled or reference execution.
+
+## GFPPS 1.0
+
+The arithmetic implementation was validated before its 1.0 banner promotion
+on both Windows and Linux. Each platform passed 112 regression cases covering
+factorial/primorial inputs, both signs, 64-bit k, witnesses, pseudoprimes,
+Graph/reference modes, Unicode paths, checkpoint integrity, and cross-resume.
+Actual signal interruption saved a consistent state whose complete Montgomery
+residue was checked independently with GMP. CUDA memcheck reported zero
+errors and zero device-memory leaks on the tested path.
+
+After changing the default progress interval to 100,000 bits, seven additional
+cases per platform checked the new interval, custom intervals, the user's
+100,000-digit examples, older checkpoints, and corrupt-state rejection. The
+arithmetic and checkpoint format were not changed by that logging update.
+
+All 29 known primorial samples returned residue 1 on both Windows and Linux:
+58 completed GPU runs, 29 byte-identical cross-platform checkpoint pairs,
+and 29 independent full GMP repetitions. The largest was
+`4599280*104561#+1`, 45,259 digits: 16.025 s Linux / 16.368 s Windows for
+exponentiation. [Per-sample results](../GFPPS/KNOWN_PRIMORIAL_RESULTS.md) include
+the verified interpretation of the expressions. These results are not newly
+generated deterministic primality certificates.
+
+Million-digit tests of `13*210000!-1` and `13*2300000#+1` ran 16,384-bit
+prefixes in 8.685 s and 8.578 s respectively. The initial 1024-bit residues
+were independently checked with GMP. **The roughly 29–30 minute full-chain
+estimates are extrapolations; neither million-digit case completed the full
+PRP test in that validation round.** No claim of superiority to another
+prime-search program is made without a same-input, same-condition comparison.
 
 ## GFPS 4.1
 

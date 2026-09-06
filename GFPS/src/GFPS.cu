@@ -1600,6 +1600,35 @@ __global__ void update_block_carries_kernel(S128* carry_in, const S128* carry_ou
     carry_in[i] = next;
 }
 
+// Experimental Jacobi carry recurrence: two distinct arrays avoid the separate
+// rotation kernel. The final pass accepts only a fixed point, and exports each
+// local digit directly. Failed batches still use the original adaptive replay.
+template<bool Final>
+__global__ void carry_shift_export_kernel(const S128* raw_coeff,
+    const S128* previous, S128* next, int64_t* digits, int m,
+    uint64_t base, double inv_base, int* sticky,
+    uint32_t* r0, uint32_t* r1, uint32_t* r2, uint32_t* r3, int mod_count) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= m) return;
+    const S128 incoming = i == 0 ? d_neg_s128(previous[m - 1]) : previous[i - 1];
+    int64_t digit = 0;
+    const S128 q = d_centered_divrem(d_add_s128(raw_coeff[i], incoming),
+                                   base, inv_base, digit);
+    next[i] = q;
+    if constexpr (Final) {
+        if (!d_eq_s128(q, previous[i])) atomicExch(sticky, 1);
+        digits[i] = digit;
+        r0[i] = d_i64_to_mod(digit, 998244353u);
+        r1[i] = d_i64_to_mod(digit, 1004535809u);
+        r2[i] = d_i64_to_mod(digit, 469762049u);
+        r0[i + m] = r1[i + m] = r2[i + m] = 0;
+        if (mod_count == 4) {
+            r3[i] = d_i64_to_mod(digit, 1224736769u);
+            r3[i + m] = 0;
+        }
+    }
+}
+
 __global__ void update_block_carries_plain_kernel(S128* carry_in, const S128* carry_out, int num_blocks) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_blocks) return;
@@ -2521,6 +2550,7 @@ public:
                                         _base < 1000000000000ull ? 4 : 3, 3, 8);
         if (gpu_duty_percent() != 100) _batch_bits = 0;
         _force_replay = algorithm.force_replay;
+        _fused_carry = std::getenv("GFPS_DISABLE_FUSED_CARRY") == nullptr;
         std::cout << "resident-algorithm: ntt=" << (_negacyclic ? "negacyclic" : "padded")
                   << ", ntt_length=" << _square_len
                   << ", dif=" << (_dif ? "yes" : "no")
@@ -2688,9 +2718,9 @@ public:
                 cuda_check(cudaGraphLaunch(_square_graph_exec[dup ? 1 : 0], _stream),
                            "batch launch complete square graph");
             } else {
-                if (_mod_count == 3) launch_square3_prefix(dup ? 2u : 1u);
-                else launch_square4_prefix(dup ? 2u : 1u);
-                launch_speculative_tail();
+                if (_mod_count == 3) launch_square3_prefix(dup ? 2u : 1u, true);
+                else launch_square4_prefix(dup ? 2u : 1u, true);
+                if (!_fused_carry) launch_speculative_tail();
             }
             _pending_dups.push_back(dup ? 1 : 0);
             if (static_cast<int>(_pending_dups.size()) >= _batch_bits) finish_pending();
@@ -2916,7 +2946,7 @@ private:
         }
     }
 
-    void launch_square3_prefix(uint32_t scale) {
+    void launch_square3_prefix(uint32_t scale, bool speculative = false) {
         const int threads = 256;
         const int blocks = (_square_len + threads - 1) / threads;
         if (_negacyclic) launch_twist(false);
@@ -2938,13 +2968,17 @@ private:
             _d_twiddle_inv[0], _d_twiddle_inv[1], _d_twiddle_inv[2],
             _twiddle_offsets, false, _square_inverse_lengths.data(), _stream, !_dif, _shared_low, _fused_tile);
         if (_negacyclic) launch_twist(true);
+        if (speculative && _fused_carry) {
+            launch_fused_carry(scale);
+            return;
+        }
         launch_normalize3_relaxed_prefix(
             _d_r[0], _d_r[1], _d_r[2], _m, _base, _inv_base, scale,
             _d_coeff, _d_digits, _d_carry_in, _d_carry_out,
             _d_changed, _stream);
     }
 
-    void launch_square4_prefix(uint32_t scale) {
+    void launch_square4_prefix(uint32_t scale, bool speculative = false) {
         const int threads = 256;
         const int blocks = (_square_len + threads - 1) / threads;
         if (_negacyclic) launch_twist(false);
@@ -2968,6 +3002,10 @@ private:
             _d_twiddle_inv[2], _d_twiddle_inv[3],
             _twiddle_offsets, false, _square_inverse_lengths.data(), _stream, !_dif, _shared_low, _fused_tile);
         if (_negacyclic) launch_twist(true);
+        if (speculative && _fused_carry) {
+            launch_fused_carry(scale);
+            return;
+        }
         launch_normalize4_relaxed_prefix(
             _d_r[0], _d_r[1], _d_r[2], _d_r[3],
             _m, _base, _inv_base, scale, _d_coeff, _d_digits,
@@ -3037,17 +3075,46 @@ private:
                            _stream, cudaStreamCaptureModeThreadLocal),
                        "resident begin square graph capture");
             if (_mod_count == 3) {
-                launch_square3_prefix(dup ? 2u : 1u);
+                launch_square3_prefix(dup ? 2u : 1u, _batch_bits > 0);
             } else {
-                launch_square4_prefix(dup ? 2u : 1u);
+                launch_square4_prefix(dup ? 2u : 1u, _batch_bits > 0);
             }
-            if (_batch_bits > 0) launch_speculative_tail();
+            if (_batch_bits > 0 && !_fused_carry) launch_speculative_tail();
             cuda_check(cudaStreamEndCapture(_stream, &_square_graph[dup]),
                        "resident end square graph capture");
             cuda_check(cudaGraphInstantiate(
                            &_square_graph_exec[dup], _square_graph[dup],
                            nullptr, nullptr, 0),
                        "resident instantiate square graph");
+        }
+    }
+
+    void launch_fused_carry(uint32_t scale) {
+        const int blocks = (_m + 255) / 256;
+        if (_mod_count == 3) {
+            crt3_fold_carry_kernel<<<blocks,256,0,_stream>>>(
+                _d_r[0],_d_r[1],_d_r[2],_m,_base,_inv_base,scale,
+                _d_coeff,_d_digits,_d_carry_out);
+        } else {
+            crt4_fold_carry_kernel<<<blocks,256,0,_stream>>>(
+                _d_r[0],_d_r[1],_d_r[2],_d_r[3],_m,_base,_inv_base,scale,
+                _d_coeff,_d_digits,_d_carry_out);
+        }
+        cuda_check(cudaGetLastError(), "fused carry CRT");
+        S128* previous = _d_carry_out;
+        S128* next = _d_carry_in;
+        for (int pass = 1; pass < _fast_carry_passes; ++pass) {
+            if (pass + 1 == _fast_carry_passes) {
+                carry_shift_export_kernel<true><<<blocks,256,0,_stream>>>(
+                    _d_coeff,previous,next,_d_digits,_m,_base,_inv_base,_d_batch_failed,
+                    _d_r[0],_d_r[1],_d_r[2],_d_r[3],_mod_count);
+            } else {
+                carry_shift_export_kernel<false><<<blocks,256,0,_stream>>>(
+                    _d_coeff,previous,next,_d_digits,_m,_base,_inv_base,_d_batch_failed,
+                    _d_r[0],_d_r[1],_d_r[2],_d_r[3],_mod_count);
+            }
+            cuda_check(cudaGetLastError(), "fused carry shifted pass");
+            std::swap(previous, next);
         }
     }
 
@@ -3112,6 +3179,7 @@ private:
     bool _negacyclic = false;
     bool _dif = false;
     bool _shared_low = false;
+    bool _fused_carry = false;
     bool _fused_tile = false;
     int _square_log_len = 0;
     int _square_len = 0;
@@ -4447,7 +4515,7 @@ void display_banner() {
     printf("%s\n","           `Y8bood8P'   Y8P o888o        Y8P o888o        Y8P 8''88888P'  Y8P           ");
     printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                            Generalized-Fermat-Primes-Seeker                            ");
-    printf("%s\n","                           Version 4.1 CUDA by A.P. Sept 2026                           ");
+    printf("%s\n","                           Version 4.4 CUDA by A.P. Sept 2026                           ");
 }
 
 void usage(const char* argv0) {

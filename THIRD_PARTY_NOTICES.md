@@ -33,7 +33,7 @@ Upstream project: <https://github.com/kimwalisch/primesieve>
 
 ## Boost.Multiprecision
 
-GFPS and GSRPS use Boost.Multiprecision headers for host-side exact-integer
+GFPS, GSRPS, and GFPPS use Boost.Multiprecision headers for host-side exact-integer
 operations and verification paths. The Windows GFNSV build uses Boost's
 fixed-width unsigned 128-bit type for host-side arithmetic. Boost is distributed under the Boost
 Software License, version 1.0.
@@ -44,7 +44,7 @@ A copy is included at [`LICENSES/BSL-1.0.txt`](LICENSES/BSL-1.0.txt).
 
 ## CUB / NVIDIA CCCL
 
-GSRPS uses CUB headers supplied with the CUDA toolkit. CUB is part of NVIDIA's
+GSRPS and GFPPS use CUB headers supplied with the CUDA toolkit. CUB is part of NVIDIA's
 CUDA Core Compute Libraries (CCCL) and is distributed under the BSD 3-Clause
 license. Consult the exact CUDA/CCCL version used for a release for its bundled
 copyright and license notices.
@@ -56,7 +56,7 @@ Upstream project: <https://github.com/NVIDIA/cccl>
 
 ## NVIDIA CUDA Toolkit and runtime
 
-All five tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
+All six tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
 and GPU to execute. The CUDA toolkit, headers, compiler, driver, and any
 redistributable runtime components remain subject to NVIDIA's licenses and EULA.
 They are not relicensed by this repository's GPL license.
@@ -75,7 +75,7 @@ authors.
 - PRST: <https://github.com/AenBleidd/rebirther-prst>
 - llrCUDA mirror: <https://github.com/primesearch/llrCUDA>
 
-GFPS, GSRPS, and GFNSV contain self-contained SHA-256 implementations used to
+GFPS, GSRPS, GFPPS, and GFNSV contain self-contained SHA-256 implementations used to
 authenticate checkpoint metadata and records. They implement the standardized SHA-256
 algorithm; a cryptographic standard is not itself a substitute for a primality
 certificate.

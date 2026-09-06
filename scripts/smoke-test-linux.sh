@@ -10,6 +10,18 @@ trap 'rm -rf -- "${scratch}"' EXIT
 "${bin_dir}/GFPS_${arch}" --selftest
 "${bin_dir}/GSRPS_${arch}" --selftest
 
+# GFPPS has explicit cpp_int reference checks rather than a --selftest mode.
+"${bin_dir}/GFPPS_${arch}" --check '1*3!+1' --verify-cpp-int | tee "${scratch}/gfpps-prime.log"
+grep -q 'verification=cpp_int-match, result=PRP' "${scratch}/gfpps-prime.log"
+"${bin_dir}/GFPPS_${arch}" --check '3*5!+1' --no-graphs --verify-cpp-int | tee "${scratch}/gfpps-composite.log"
+grep -q 'verification=cpp_int-match, result=COMPOSITE' "${scratch}/gfpps-composite.log"
+"${bin_dir}/GFPPS_${arch}" --check '17*31#+1' --max-bits 16 \
+  --checkpoint "${scratch}/gfpps.ckpt" --verify-cpp-int | tee "${scratch}/gfpps-partial.log"
+grep -q 'verification=cpp_int-match, result=PARTIAL' "${scratch}/gfpps-partial.log"
+"${bin_dir}/GFPPS_${arch}" --check '17*31#+1' --checkpoint "${scratch}/gfpps.ckpt" \
+  --resume-checkpoint --verify-cpp-int | tee "${scratch}/gfpps-resumed.log"
+grep -Eq 'verification=cpp_int-match, result=(PRP|COMPOSITE)' "${scratch}/gfpps-resumed.log"
+
 "${bin_dir}/GFNSV_${arch}" \
   --n 3 --bmin 2 --bmax 100 --pmax 100 --batch 16 \
   --out "${scratch}/gfnsv-resume.txt" --quiet

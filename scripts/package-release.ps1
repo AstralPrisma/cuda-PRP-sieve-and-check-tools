@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.0",
+    [string]$SuiteVersion = "v2026.09.5",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = ""
@@ -14,8 +14,9 @@ $releaseRoot = [IO.Path]::GetFullPath((Join-Path $repoDirectory "release-assets"
 $stagingPath = Join-Path $releaseRoot "package-staging"
 $architectures = @("sm_86", "sm_89", "sm_100", "sm_120")
 $versions = [ordered]@{
-    GFPS = "4.1"
+    GFPS = "4.4"
     GSRPS = "2.3"
+    GFPPS = "1.0"
     GFNSV = "1.0"
     GSRSV = "2.0"
     GNCWSV = "1.0"
@@ -152,7 +153,11 @@ try {
                 }
             }
 
-            [IO.File]::Copy((Join-Path $repoDirectory "$tool\README.md"), (Join-Path $componentStage "README.md"), $true)
+            # Include component-level supporting Markdown, e.g. GFPPS's sample
+            # validation table linked by its README, without local test logs.
+            Get-ChildItem -LiteralPath (Join-Path $repoDirectory $tool) -File -Filter "*.md" | ForEach-Object {
+                [IO.File]::Copy($_.FullName, (Join-Path $componentStage $_.Name), $true)
+            }
             [IO.File]::Copy((Join-Path $repoDirectory "LICENSE"), (Join-Path $componentStage "LICENSE"), $true)
             [IO.File]::Copy((Join-Path $repoDirectory "THIRD_PARTY_NOTICES.md"), (Join-Path $componentStage "THIRD_PARTY_NOTICES.md"), $true)
             [IO.File]::Copy((Join-Path $repoDirectory "docs\correctness.md"), (Join-Path $componentStage "CORRECTNESS.md"), $true)
@@ -218,7 +223,8 @@ try {
     $sourceTar = Join-Path $outputPath "$sourceBase.tar"
     Invoke-External { & git archive --format=tar "--prefix=$sourceBase/" -o $sourceTar HEAD } "Source archive"
     $sourceTarWsl = (& wsl.exe -e wslpath -a $sourceTar).Trim()
-    Invoke-External { & wsl.exe -e xz -T1 -f -9 $sourceTarWsl } "Source archive compression"
+    # Keep compression workspace bounded on a host also running prime searches.
+    Invoke-External { & wsl.exe -e xz -T1 -f -6 $sourceTarWsl } "Source archive compression"
 
     $manifest = [ordered]@{
         suite_version = $SuiteVersion

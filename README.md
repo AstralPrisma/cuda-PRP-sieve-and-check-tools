@@ -1,6 +1,6 @@
 # CUDA PRP: sieve and check tools
 
-This repository collects five CUDA programs for experimental large-integer
+This repository collects six CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
@@ -14,19 +14,20 @@ are published as GitHub Release assets rather than committed to the repository.
 
 | Directory | Version | Purpose |
 | --- | ---: | --- |
-| [`GFPS/`](GFPS/) | 4.1 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
+| [`GFPS/`](GFPS/) | 4.4 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
 | [`GSRPS/`](GSRPS/) | 2.3 | Checks generalized Sierpinski/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
+| [`GFPPS/`](GFPPS/) | 1.0 | Checks generalized factorial/primorial candidates `k*n!+/-1` and `k*n#+/-1`. |
 | [`GFNSV/`](GFNSV/) | 1.0 | GPU-sieves even bases for `b^(2^n)+1`, with saved-state continuation. |
 | [`GSRSV/`](GSRSV/) | 2.0 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
 | [`GNCWSV/`](GNCWSV/) | 1.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
 
 ## 中文简介
 
-本仓库统一发布五个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
+本仓库统一发布六个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
 检查，GFNSV 用于广义费马数 GPU 筛选，GSRPS 用于广义 Sierpinski/Riesel
-数 PRP 检查，GSRSV 用于固定
+数 PRP 检查，GFPPS 用于广义阶乘/素数阶乘数 PRP 检查，GSRSV 用于固定
 `b,n` 的 `k*b^n±1` 等数型筛选，GNCWSV 用于广义 Cullen/Woodall 与
-Near Cullen/Woodall 数型筛选。源码位于五个同名目录；预编译程序只在
+Near Cullen/Woodall 数型筛选。源码位于六个同名目录；预编译程序只在
 Releases 中发布。`PRP` 不是确定性素数证明，命中后仍须由独立程序复核。
 
 这里的 GFPS 指本仓库中的 generalized-Fermat CUDA checker；其他项目或
@@ -42,10 +43,14 @@ before selecting a search range. Its actual base ceiling depends on `n`, not
 just the `b < 2^63` storage limit. **Current production modes support only
 `1 <= n <= 20`; inputs with `n > 20` are not supported.**
 
-GFPS 4.1 enables a half-length negacyclic NTT and checked carry batches by
-default. GSRPS 2.3 uses condition-checked weighted scans and compact carry
+GFPS 4.4 retains half-length negacyclic NTT and checked carry batches, and
+fuses carry rotation, convergence checking, and RNS export for 100%-duty
+batches. GSRPS 2.3 uses condition-checked weighted scans and compact carry
 reduction, retaining the exact fallback where required. GFNSV 1.0 adds GPU
 sieving for generalized Fermat searches; the older CPU GFNSV is not bundled.
+GFPPS 1.0 adds general integer Montgomery arithmetic and portable checkpoints
+for factorial and primorial PRP checks. Its `n#` means the product of primes
+not exceeding `n`; arithmetic checkpoints require an explicit `--checkpoint FILE`.
 The component READMEs describe the controls and resume interfaces. Recorded
 timings and the limits of validation are in
 [September 2026 validation](docs/validation-2026-09.md).
@@ -56,12 +61,12 @@ Release packages are separated by operating system. Each package contains the
 native CUDA architectures shown below; select the executable matching the
 target GPU.
 
-| CUDA target | GFPS | GSRPS | GFNSV | GSRSV | GNCWSV |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| `sm_86` | yes | yes | yes | yes | yes |
-| `sm_89` | yes | yes | yes | yes | yes |
-| `sm_100` | yes | yes | yes | yes | yes |
-| `sm_120` | yes | yes | yes | yes | yes |
+| CUDA target | GFPS | GSRPS | GFPPS | GFNSV | GSRSV | GNCWSV |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `sm_86` | yes | yes | yes | yes | yes | yes |
+| `sm_89` | yes | yes | yes | yes | yes | yes |
+| `sm_100` | yes | yes | yes | yes | yes | yes |
+| `sm_120` | yes | yes | yes | yes | yes | yes |
 
 Both Linux x86-64 ELF and Windows x64 PE executables are provided. Each file
 contains native cubins for the SM target in its filename. CUDA may also embed
@@ -88,6 +93,7 @@ command reference:
 ```bash
 ./GFPS_sm_89
 ./GSRPS_sm_89
+./GFPPS_sm_89 --help
 ./GFNSV_sm_89 --help
 ./GSRSV_sm_89 -h
 ./GNCWSV_sm_89 -h
@@ -98,6 +104,7 @@ Example checker invocations:
 ```bash
 ./GFPS_sm_89 --prp-check-pref 1814570322684094 16 1000
 ./GSRPS_sm_89 --check '328*799^325799-1'
+./GFPPS_sm_89 --check '13*4000!-1' --checkpoint factorial.ckpt
 ```
 
 The examples illustrate syntax only. They are not claims about the primality of
@@ -106,8 +113,8 @@ the displayed numbers.
 ## Building from source
 
 The programs require a CUDA toolkit supporting the selected architecture and a
-C++17 host compiler. GFPS and GSRPS also use Boost.Multiprecision headers; the
-Windows GFNSV build uses Boost for host-side 128-bit arithmetic. GSRPS uses CUB
+C++17 host compiler. GFPS, GSRPS, and GFPPS use Boost.Multiprecision headers; the
+Windows GFNSV build uses Boost for host-side 128-bit arithmetic. GSRPS and GFPPS use CUB
 through the CUDA toolkit.
 
 Every tool includes Linux/WSL and Windows build scripts. From the repository
@@ -116,6 +123,7 @@ root, for example:
 ```bash
 ./GFPS/scripts/build-linux.sh build/linux sm_89
 ./GSRPS/scripts/build-linux.sh build/linux sm_89
+./GFPPS/scripts/build-linux.sh build/linux sm_89
 ./GFNSV/scripts/build-linux.sh build/linux sm_89
 ./GSRSV/scripts/build-linux.sh build/linux sm_89
 ./GNCWSV/scripts/build-linux.sh build/linux sm_89
@@ -124,13 +132,14 @@ root, for example:
 ```bat
 GFPS\scripts\build-windows.bat build\windows sm_89
 GSRPS\scripts\build-windows.bat build\windows sm_89
+GFPPS\scripts\build-windows.bat build\windows sm_89
 GFNSV\scripts\build-windows.bat build\windows sm_89
 GSRSV\scripts\build-windows.bat build\windows sm_89
 GNCWSV\scripts\build-windows.bat build\windows sm_89
 ```
 
 Omit the architecture arguments to build all four release targets. GFPS,
-GSRPS, and Windows GFNSV require Boost headers; set `BOOST_ROOT` to the directory that
+GSRPS, GFPPS, and Windows GFNSV require Boost headers; set `BOOST_ROOT` to the directory that
 contains the `boost` folder. The `.bat` launchers call the checked PowerShell
 build scripts and use CUDA's MSVC host compiler integration.
 
@@ -163,6 +172,7 @@ At minimum:
 ```bash
 ./GFPS_sm_89 --selftest
 ./GSRPS_sm_89 --selftest
+./GFPPS_sm_89 --check '3*5!+1' --verify-cpp-int
 ./GFNSV_sm_89 --help
 ./GSRSV_sm_89 --version
 ./GNCWSV_sm_89 --version

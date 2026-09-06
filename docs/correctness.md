@@ -1,12 +1,12 @@
 # Correctness and result semantics
 
-This document defines what the five tools establish, what they do not
+This document defines what the six tools establish, what they do not
 establish, and the minimum evidence expected before a build is used for a long
 search.
 
 ## PRP is not a primality proof
 
-GFPS and GSRPS perform probable-prime checks. Passing such a check means that a
+GFPS, GSRPS, and GFPPS perform probable-prime checks. Passing such a check means that a
 candidate satisfies the implemented congruence for the selected witness. It
 does not constitute a deterministic proof that the candidate is prime.
 
@@ -16,7 +16,7 @@ does not constitute a deterministic proof that the candidate is prime.
 - Publication as a prime requires a deterministic proof or certificate from an
   appropriate independent program.
 
-Do not label a GFPS or GSRPS `PRP` result as `prime` merely because the final
+Do not label a checker `PRP` result as `prime` merely because the final
 residue is one.
 
 ## Checker arithmetic
@@ -28,10 +28,14 @@ centered CRT reconstruction, and balanced carry normalization. Depending on the
 coefficient bound, the resident path selects three or four NTT primes. It must
 abort rather than continue when the centered CRT range is insufficient.
 
-GFPS 4.1 batches carry work only with a persistent convergence-failure flag.
+GFPS 4.4 batches carry work only with a persistent convergence-failure flag.
 Every accepted batch has either passed those checks or been restored and
 replayed from its saved start using adaptive carry. Validate both paths,
 including forced replay, before changing batching or carry bounds.
+The fused carry path in 4.4 uses distinct read/write arrays for adjacent carry
+propagation and checks the same fixed point as the old carry rotation. Its
+failure latch is never cleared by later steps in the same batch. Non-batched,
+reference-mode, and reduced-duty execution retain adaptive normalization.
 
 For even `b`, the ordinary balanced alphabet has exactly one missing residue
 class. GFPS includes the additional canonical representation
@@ -54,6 +58,24 @@ performance, not the intended modular result.
 `--verify-cpp-int` requests an independent Boost.Multiprecision repetition for
 supported checks. It is useful for validation, but its use does not turn a
 Fermat PRP result into a deterministic primality proof.
+
+### GFPPS
+
+GFPPS checks `k*n!+/-1` and `k*n#+/-1`, with `n#` defined as the product of
+primes up to n. It uses general Montgomery reduction with two-prime integer
+NTT convolution and fused small-witness scaling. The implementation checks
+CRT capacity, REDC low-part cancellation, and carry/high-part bounds. Accepted
+Montgomery states are canonical; one final decode is required before comparing
+the Fermat residue with 1.
+
+The SHA-256-protected `GFPPS001` checkpoint is portable between Linux and
+Windows. It saves the expression, witness, progress, modulus digest, and
+canonical limbs. Saving is opt-in through `--checkpoint FILE`; absent that
+option, interrupted progress cannot be recovered. `PARTIAL` and `INTERRUPTED`
+are never completed PRP classifications. `--verify-cpp-int` explicitly repeats
+small prefixes (modulus at most 8192 bits) and does not provide a prime proof.
+Neither checkpoint integrity nor range checks provide Gerbicz-style arithmetic
+error detection; independently recheck meaningful hits.
 
 ## Siever semantics
 
@@ -98,6 +120,10 @@ Every release candidate should pass the following checks before publication.
    windows, CUDA Graph enabled/disabled paths, and any persistent tuning cache.
 7. Complete at least one end-to-end composite check with an unchanged expected
    final residue. Independently repeat any PRP hit.
+8. For GFPPS, exercise both factorial/primorial families and signs, multiple
+   witnesses, 64-bit k, pseudoprimes, Graph on/off, cross-system checkpoint
+   resume, real interrupts, and damaged or mismatched checkpoint rejection.
+   Use independent GMP/Boost calculations for the complete decoded residue.
 
 ### Siever tests
 

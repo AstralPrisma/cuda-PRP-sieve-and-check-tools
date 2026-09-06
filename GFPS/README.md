@@ -1,4 +1,4 @@
-# GFPS 4.1
+# GFPS 4.4
 
 GFPS is a CUDA probable-prime checker for generalized Fermat numbers
 
@@ -86,11 +86,26 @@ GFPS_DUTY_PERCENT=1..100
 GFPS_DISABLE_CUDA_GRAPHS=1
 ```
 
-Version 4.1 uses half-length negacyclic transforms, DIF/DIT ordering, and fused
+Version 4.4 uses half-length negacyclic transforms, DIF/DIT ordering, and fused
 shared-memory kernels by default. Checked carry batches reduce CPU/GPU
 synchronization: an unconverged carry is latched, the batch-start residue is
 restored, and the whole batch is replayed with adaptive carry before its result
 is accepted. Checkpoint writes finish and validate any pending batch first.
+
+Version 4.4 additionally fuses carry rotation, fixed-point checking, and RNS
+export within the checked 100%-duty batch path. The final fused pass accepts a
+step only when every carry is unchanged; any failure remains latched until the
+whole batch is restored and replayed with the independent adaptive path.
+Three/four-prime CRT bounds, the special balanced residue, and checkpoint
+format are unchanged. Set `GFPS_DISABLE_FUSED_CARRY=1` to compare with the older
+batch normalization. `--batch-bits 0`, `--reference-mode`, and duty below 100
+continue to use the non-fused adaptive path.
+
+On one RTX 4060 Laptop GPU, alternating 30,000-bit prefixes reduced median
+time by 21.7% (four primes) and 34.9% (three primes) versus 4.1. A full
+million-digit known PRP completed in 265.811 seconds, with all five saved
+anchors byte-identical to the earlier validated run. These measurements are
+case-specific; see [validation details](../docs/validation-2026-09.md).
 
 `--duty-percent` inserts rest time between GPU work intervals. It reduces
 sustained GPU use but increases wall-clock time. A duty below 100 automatically
@@ -258,7 +273,7 @@ three primes when sufficient, otherwise four; the table uses all four.
 | 20 | 1,048,576 | 1,049,002,506,596,276 |
 | >20 | — | Not supported |
 
-**GFPS 4.1 currently accepts only `1 <= n <= 20`. Inputs with `n > 20` are not supported.**
+**GFPS 4.4 currently accepts only `1 <= n <= 20`. Inputs with `n > 20` are not supported.**
 
 For each supported row, the displayed even base passes the exact CRT inequality and
 `b_max + 2` fails. For example, at `n=16`, `4196010026385110` is the ceiling;

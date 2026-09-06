@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.09.5 - GFPS 4.4 and GFPPS 1.0
+
+- GFPS 4.4 fuses checked-batch carry propagation, fixed-point validation, and
+  RNS export, retaining latched failures and independent adaptive replay.
+  Reduced-duty, non-batched, and reference runs retain the existing path.
+  CRT limits and the checkpoint format are unchanged.
+- Added GFPPS 1.0 for `k*n!+/-1` and `k*n#+/-1` Fermat PRP checks, using
+  exact integer NTT/Montgomery arithmetic without GPU FP64.
+- GFPPS supports explicit SHA-256 checkpoints, Windows/Linux cross-resume,
+  safe Ctrl+C handling, and default 100,000-bit progress. There is no implicit
+  checkpoint file, PRPNet integration, or deterministic proof generation.
+- Build, smoke, and release packaging scripts now cover six tools and all
+  source/header hashes. GSRPS 2.3, GFNSV 1.0, GSRSV 2.0, and GNCWSV 1.0
+  retain their component versions.
+- Published validation distinguishes complete PRP checks from million-digit
+  GFPPS prefix timing extrapolations and cross-compiled GPU architectures.
+
 ## v2026.09.4 - GFPS 4.1, GSRPS 2.3, and GFNSV CUDA 1.0
 
 - GFPS 4.1 enables half-length negacyclic NTT, DIF/DIT and shared-memory kernel

@@ -14,9 +14,25 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$Program exited with code $LASTEXITCODE" }
 }
 
+function Invoke-Gfpps([string[]]$Arguments, [string]$Expected) {
+    $output = @(& (Join-Path $binPath "GFPPS_$Architecture.exe") @Arguments)
+    if ($LASTEXITCODE -ne 0) { throw "GFPPS exited with code $LASTEXITCODE" }
+    $output | Write-Output
+    if (($output -join "`n") -notmatch "verification=cpp_int-match, result=$Expected(?:\r?\n|$)") {
+        throw "GFPPS did not return the expected verified status: $Expected"
+    }
+}
+
 try {
     Invoke-Checked (Join-Path $binPath "GFPS_$Architecture.exe") @("--selftest")
     Invoke-Checked (Join-Path $binPath "GSRPS_$Architecture.exe") @("--selftest")
+    Invoke-Gfpps @("--check", "1*3!+1", "--verify-cpp-int") "PRP"
+    Invoke-Gfpps @("--check", "3*5!+1", "--no-graphs", "--verify-cpp-int") "COMPOSITE"
+    $gfppsCheckpoint = Join-Path $scratch "gfpps.ckpt"
+    Invoke-Gfpps @("--check", "17*31#+1", "--max-bits", "16",
+        "--checkpoint", $gfppsCheckpoint, "--verify-cpp-int") "PARTIAL"
+    Invoke-Gfpps @("--check", "17*31#+1", "--checkpoint", $gfppsCheckpoint,
+        "--resume-checkpoint", "--verify-cpp-int") "(?:PRP|COMPOSITE)"
     $resumePath = Join-Path $scratch "gfnsv-resume.txt"
     $directPath = Join-Path $scratch "gfnsv-direct.txt"
     Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @(
