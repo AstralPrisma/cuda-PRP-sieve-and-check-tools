@@ -35,6 +35,15 @@ verification of the rebuilt executables. Consult this release's manifest for
 any additional exact-binary GPU smoke-test evidence, separate from the earlier
 numerical validation recorded below.
 
+Separately, all six rebuilt `sm_89` executables passed short GPU smoke
+regressions on both Windows and Linux. These cover GFPS/GSRPS selftests,
+GFPPS cpp_int-verified factorial/primorial PRP and composite cases plus
+checkpoint continuation, and verified sieves. Independent Python-integer
+oracles matched the small survivor sets on both platforms: GFNSV 9 bases,
+GSRSV 0 paired terms, and GNCWSV 6 terms. The GFPPS test's final Windows and
+Linux checkpoint files were byte-identical. This output-only rebuild did not
+repeat the earlier full-length million-digit PRP runs.
+
 ## GFPS 4.4 carry fusion
 
 The optimized batch path fuses carry rotation, convergence checking, and RNS
