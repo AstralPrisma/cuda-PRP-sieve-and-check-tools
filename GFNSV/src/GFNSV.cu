@@ -439,7 +439,10 @@ void display_banner() {
     printf("%s\n","                               Version 1.0 CUDA by A.P. Sept 2026                               ");
 }
 
+#include "console_utf8.hpp"
+
 int main(int argc,char**argv) {
+    prp_console::initialize_utf8_output();
     display_banner();
     std::fflush(stdout);
     std::cout.setf(std::ios::unitbuf);

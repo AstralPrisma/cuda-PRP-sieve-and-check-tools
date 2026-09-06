@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.09.6 - Windows console UTF-8 rebuild
+
+- All six programs initialize UTF-8 output for real Windows consoles, then
+  restore the invoking console's original output codepage on normal exit.
+  Input codepage is unchanged; redirected files and pipes remain UTF-8.
+- Added the required local `console_utf8.hpp` helper to every component.
+  Linux initialization is a no-op. Arithmetic, sieving, checkpoints, and
+  component versions are unchanged.
+- The exact Windows `sm_89` binaries passed 54 real-console/redirection help
+  tests plus 18 complete screen-to-file comparisons. These output tests do
+  not constitute another full-length PRP validation round.
+
 ## v2026.09.5 - GFPS 4.4 and GFPPS 1.0
 
 - GFPS 4.4 fuses checked-batch carry propagation, fixed-point validation, and

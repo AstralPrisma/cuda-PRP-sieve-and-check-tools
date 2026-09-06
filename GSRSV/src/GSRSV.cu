@@ -3076,7 +3076,10 @@ void display_banner() {
     printf("%s\n","                            Version 2.0 CUDA by A.P. August 2026                            ");
 }
 
+#include "console_utf8.hpp"
+
 int main(int argc, char** argv) {
+    prp_console::initialize_utf8_output();
     display_banner();
     using namespace twinsieve_cuda;
     try {

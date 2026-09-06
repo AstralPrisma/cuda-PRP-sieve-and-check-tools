@@ -12,6 +12,29 @@ compilers respectively. `sm_86`, `sm_100`, and `sm_120` binaries were
 cross-compiled and their cubin targets checked; they were not executed on
 matching hardware.
 
+## Windows console UTF-8 rebuild (v2026.09.6)
+
+The previously published Windows executables already wrote valid UTF-8 bytes
+to files, but a console using codepage 936 decoded the banners incorrectly.
+This was reproduced for all six tools; GFPPS also reproduced it under CP437.
+The fix changes real-console output decoding, with no arithmetic or checkpoint
+format change. For GFPPS, old and fixed redirected help output was byte-identical.
+
+The six fixed Windows `sm_89` binaries passed **54/54 help-output tests**:
+each tool under output codepages 936, 437, and 65001, with real console output,
+stdout redirected, and both stdout/stderr redirected. The actual Unicode
+screen buffer was read using `ReadConsoleOutputCharacterW`, rather than merely
+checking that a pipe contained UTF-8 bytes. All **18/18 full screen-to-file
+comparisons** matched; redirected files decoded as strict UTF-8.
+
+Every tested normal exit restored the original output codepage and preserved
+the input codepage. This includes GFNSV help's `std::exit(0)` path. Forced
+process termination cannot invoke ordinary cleanup. These tests exercised help
+paths only, without GPU calculations; they are not a fresh full-length numeric
+verification of the rebuilt executables. Consult this release's manifest for
+any additional exact-binary GPU smoke-test evidence, separate from the earlier
+numerical validation recorded below.
+
 ## GFPS 4.4 carry fusion
 
 The optimized batch path fuses carry rotation, convergence checking, and RNS

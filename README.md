@@ -4,6 +4,10 @@ This repository collects six CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
+The [v2026.09.6 rebuild](docs/releases/v2026.09.6.md) fixes Windows console
+banner encoding in all six tools while retaining the component versions below.
+Redirected logs remain UTF-8; manual `chcp` is unnecessary for direct console use.
+
 > [!IMPORTANT]
 > A probable-prime (PRP) result is not a deterministic primality proof. Treat a
 > PRP hit as a candidate that requires independent verification. A sieve output

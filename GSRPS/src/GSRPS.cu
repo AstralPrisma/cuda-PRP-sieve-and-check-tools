@@ -4617,7 +4617,10 @@ void usage(const char* argv0) {
 
 }  // namespace
 
+#include "console_utf8.hpp"
+
 int main(int argc, char** argv) {
+    prp_console::initialize_utf8_output();
     std::cout.setf(std::ios::unitbuf);
     std::cerr.setf(std::ios::unitbuf);
     try {

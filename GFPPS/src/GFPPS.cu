@@ -543,7 +543,10 @@ int run(int argc,char** argv) {
     return interrupted?130:0;
 }
 } // namespace gfpps
+#include "console_utf8.hpp"
+
 int main(int argc,char** argv) {
+    prp_console::initialize_utf8_output();
     std::cout.setf(std::ios::unitbuf); std::cerr.setf(std::ios::unitbuf);
     std::signal(SIGINT,gfpps::signal_handler); std::signal(SIGTERM,gfpps::signal_handler);
 #ifdef _WIN32

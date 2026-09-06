@@ -17,7 +17,7 @@ The six tools have independent component versions:
 | GSRSV | 2.0 |
 | GNCWSV | 1.0 |
 
-Use a suite tag such as `v2026.09.5` for a coordinated repository release and
+Use a suite tag such as `v2026.09.6` for a coordinated repository release and
 list all six component versions in its notes. Increment the final field for a
 rebuild or packaging correction that does not change every component.
 
@@ -117,7 +117,7 @@ The Release should also contain:
 ```text
 SHA256SUMS
 manifest.json
-cuda-prp-sieve-and-check-tools-v2026.09.5-source.tar.xz
+cuda-prp-sieve-and-check-tools-v2026.09.6-source.tar.xz
 ```
 
 GitHub's generated source archives point to the tag, but an explicit source
@@ -149,7 +149,7 @@ because compilation succeeded.
 
 The manifest also includes a `source_files` map for each component. Record the
 SHA-256 of every CUDA source and local header, including GFNSV's state codec
-and GFPPS's NTT and SHA-256 headers;
+and GFPPS's NTT and SHA-256 headers, plus each tool's `console_utf8.hpp`;
 hashing only the `.cu` file would miss a checkpoint-header change.
 
 ## Release verification
@@ -205,7 +205,7 @@ Then create the twelve component/platform archives, source archive, manifest,
 and checksums (15 assets total) with:
 
 ```powershell
-scripts\package-release.ps1 -SuiteVersion v2026.09.5
+scripts\package-release.ps1 -SuiteVersion v2026.09.6
 ```
 
 ## Publishing with GitHub CLI
@@ -215,8 +215,8 @@ release with a command shaped like:
 
 ```bash
 gh auth status
-gh release create v2026.09.5 \
-  --title 'CUDA PRP: sieve and check tools 2026.09.5' \
+gh release create v2026.09.6 \
+  --title 'CUDA PRP: sieve and check tools 2026.09.6' \
   --notes-file release-notes.md \
   release-assets/*
 ```
