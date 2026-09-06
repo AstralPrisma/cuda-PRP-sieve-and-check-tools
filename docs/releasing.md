@@ -13,13 +13,19 @@ The six tools have independent component versions:
 | GFPS | 4.4 |
 | GSRPS | 2.3 |
 | GFPPS | 1.0 |
-| GFNSV | 1.0 |
+| GFNSV | 1.1 |
 | GSRSV | 2.0 |
 | GNCWSV | 1.0 |
 
-Use a suite tag such as `v2026.09.6` for a coordinated repository release and
+Use a suite tag such as `v2026.09.7` for a coordinated repository release and
 list all six component versions in its notes. Increment the final field for a
 rebuild or packaging correction that does not change every component.
+
+For v2026.09.7, only GFNSV changes: its eight platform/SM binaries use the
+verified 1.1 build. The other 40 binaries are reused from v2026.09.6, with
+byte-identical artifacts and unchanged component source/header hashes.
+Retain their actual original compiler and runtime-test evidence and record
+`reused_from` in build metadata; do not describe the suite as 48 new builds.
 
 ## Pre-release checklist
 
@@ -86,8 +92,8 @@ gsrps-2.3-linux-x86_64-cuda13.3.tar.xz
 gsrps-2.3-windows-x86_64-cuda13.3.zip
 gfpps-1.0-linux-x86_64-cuda13.3.tar.xz
 gfpps-1.0-windows-x86_64-cuda13.3.zip
-gfnsv-1.0-linux-x86_64-cuda13.3.tar.xz
-gfnsv-1.0-windows-x86_64-cuda13.3.zip
+gfnsv-1.1-linux-x86_64-cuda13.3.tar.xz
+gfnsv-1.1-windows-x86_64-cuda13.3.zip
 ```
 
 Replace `cuda13.3` with the actual toolkit used by that release. Do not use a
@@ -107,6 +113,12 @@ Each archive should contain a single top-level directory and include:
   BUILDINFO.txt
 ```
 
+Both GFNSV archives additionally contain `scripts/gfnsv_to_cands.py` and
+`scripts/gfnsv_queue.py`. Keep the two files in the same directory for imports.
+Only these allowlisted runtime Python files are copied into binary packages;
+local test harnesses, fixtures, caches, and logs are excluded. Python 3.10+
+with the standard library is sufficient for offline conversion.
+
 Set executable mode to `0755` before creating a tar archive. Packaging directly
 from a Windows-mounted directory can otherwise preserve unsuitable permission
 bits. Public builds should omit path-bearing debug/line information and must be
@@ -117,7 +129,7 @@ The Release should also contain:
 ```text
 SHA256SUMS
 manifest.json
-cuda-prp-sieve-and-check-tools-v2026.09.6-source.tar.xz
+cuda-prp-sieve-and-check-tools-v2026.09.7-source.tar.xz
 ```
 
 GitHub's generated source archives point to the tag, but an explicit source
@@ -152,6 +164,30 @@ SHA-256 of every CUDA source and local header, including GFNSV's state codec
 and GFPPS's NTT and SHA-256 headers, plus each tool's `console_utf8.hpp`;
 hashing only the `.cu` file would miss a checkpoint-header change.
 
+The separate `supporting_files` map records each packaged GFNSV Python helper
+as an archive-relative path and SHA-256. Verify these bytes against the tagged
+source as well as against the manifest. A nonempty `reused_from` field in the
+component/platform build metadata is copied into the manifest and BUILDINFO
+to identify earlier binary provenance; original evidence must be preserved.
+For example:
+
+```json
+{
+  "reused_from": {
+    "suite_version": "v2026.09.6",
+    "source_commit": "<original full commit id>",
+    "artifact_sha256": "<original component archive sha256>"
+  }
+}
+```
+
+Reusing a binary is appropriate only after every current component source and
+local-header hash matches its original build record and the binary is
+byte-identical to the verified earlier artifact. `source_commit` in the new
+package identifies the current source archive; `reused_from` identifies its
+original build provenance. A documentation-only commit does not change the
+component's compiled source bytes.
+
 ## Release verification
 
 Before uploading, unpack every archive into a fresh directory and run:
@@ -166,6 +202,14 @@ cuobjdump --list-elf <executable>
 Then run the applicable `--version`, help, self-test, known-checksum, and small
 sieve tests. Confirm that the archive contains no generated checkpoint, factor,
 candidate, result, cache, or log file.
+
+Also inspect the explicit source archive: it must contain only intended
+tracked source, documentation, and portable tests, with no executables,
+credentials, private paths, production data, or temporary artifacts. GPU
+validation harnesses tied to maintainer-local environments are not published.
+In each GFNSV platform archive, confirm the two Python helpers exist and match
+the tagged source byte-for-byte, then run converter help and a synthetic
+complete-snapshot dry-run with Python bytecode writes disabled.
 
 After producing raw binaries with the build scripts, record their provenance
 in `raw/build-metadata.json` (or pass `-BuildMetadataPath`). The packager
@@ -205,7 +249,7 @@ Then create the twelve component/platform archives, source archive, manifest,
 and checksums (15 assets total) with:
 
 ```powershell
-scripts\package-release.ps1 -SuiteVersion v2026.09.6
+scripts\package-release.ps1 -SuiteVersion v2026.09.7
 ```
 
 ## Publishing with GitHub CLI
@@ -215,8 +259,8 @@ release with a command shaped like:
 
 ```bash
 gh auth status
-gh release create v2026.09.6 \
-  --title 'CUDA PRP: sieve and check tools 2026.09.6' \
+gh release create v2026.09.7 \
+  --title 'CUDA PRP: sieve and check tools 2026.09.7' \
   --notes-file release-notes.md \
   release-assets/*
 ```

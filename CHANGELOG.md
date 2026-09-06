@@ -1,5 +1,25 @@
 # Changelog
 
+## v2026.09.7 - GFNSV CUDA 1.1 single-file recovery
+
+- GFNSV 1.1 writes self-contained v4 GFN/ABC/base/expression snapshots with
+  bounded resume metadata, ordered survivors, and count/SHA-256 validation.
+  The main file alone resumes across Windows/Linux; factor logs are optional.
+- Added GSRSV-style short options, periodic survivor/progress/ETA output, and
+  the combined `-4`/`-5`/`-6` efficiency limits. Efficiency-controlled runs
+  override `pmax` and save their completed prefix when stopping normally.
+- Legacy CUDA v3 checkpoints and validated old GFN/ABC plus v3 companion pairs
+  migrate on save. Damaged v4 snapshots never fall back to an older companion.
+- Both GFNSV platform packages include standard-library Python tools for
+  validated offline conversion to `cand_<b>.txt`, with dry-run, per-n manifests,
+  conflict checks, and safe repeat conversion. No upload or PRP testing occurs.
+- Only GFNSV's eight platform/SM binaries are updated. The other 40 binaries
+  are reused byte-for-byte from v2026.09.6 after source and binary hash checks;
+  their prior runtime-test evidence is retained, not reported as a new test run.
+- The 1.1 validation covers 47 CLI cases, compact codecs, cross-language and
+  converter tests, real interruptions, and single-file cross-platform resume.
+  Only `sm_89` has matching-GPU runtime evidence; other targets are cross-built.
+
 ## v2026.09.6 - Windows console UTF-8 rebuild
 
 - All six programs initialize UTF-8 output for real Windows consoles, then

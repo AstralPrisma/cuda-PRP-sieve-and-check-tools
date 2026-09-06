@@ -1,7 +1,7 @@
 # September 2026 local validation
 
 This record covers the GFPS 4.1/4.4 and GSRPS 2.3 arithmetic promotions,
-GFPPS 1.0, and the GFNSV CUDA 1.0 sieve. It describes tested cases, not a guarantee that every
+GFPPS 1.0, and the GFNSV CUDA 1.0/1.1 sieve. It describes tested cases, not a guarantee that every
 parameter, device, or hardware execution is free of defects.
 
 ## Hardware and build coverage
@@ -11,6 +11,54 @@ Windows x64 and Linux/WSL x86-64 builds use CUDA 13.3, with MSVC and GCC host
 compilers respectively. `sm_86`, `sm_100`, and `sm_120` binaries were
 cross-compiled and their cubin targets checked; they were not executed on
 matching hardware.
+
+## GFNSV CUDA 1.1 single-file v4 (v2026.09.7)
+
+The final 1.1 implementation stores the resume metadata and survivor list in
+one checksum-validated file. Factor logs are optional. Local validation of
+the final sources and exact `sm_89` executables recorded:
+
+- **141 deterministic C++ compact-codec checks**, plus 24 Python-generated
+  fixtures read by C++ and 21 C++ fixtures read by Python. Cases include all
+  four formats, CRLF normalization, partial and empty states, boundaries,
+  metadata/order/count/checksum errors, and refusal to fall back to old state
+  after new-format damage.
+- **82 Python helper/converter tests per platform**: Windows 80 passed and 2
+  skipped; WSL 81 passed and 1 skipped; no failures or errors. Each platform
+  skipped one actual-symlink case because the staging filesystem denied link
+  creation; mocked symlink/reparse checks still ran. Windows also skipped the
+  POSIX-only no-hardlink fallback test, which passed on WSL.
+- **47 CLI integration cases**, including equality with earlier survivor
+  sets, single-file continuation without a sidecar or log, optional log merge,
+  false-factor rejection, progress cadence and ETA, efficiency stopping,
+  malformed-file rejection, and legacy migration.
+- Real Windows `CTRL_BREAK` and Linux `SIGINT` each produced a valid partial
+  v4 file and exit status 130. A copy placed alone in an empty directory
+  resumed on the other operating system, matched fresh survivors at the same
+  bound, and left its original input unchanged. Neither direction required
+  a `.sieve-state` companion or factor log.
+- The real offline converter and both GFPS wrapper queue-preparation paths
+  accepted standalone v4 input. Conversion produced the expected nine task
+  files on both operating systems; dry-run made no output files or directory.
+  These wrapper checks do not imply the wrappers themselves are bundled here.
+
+All eight GFNSV Windows/Linux `sm_86`, `sm_89`, `sm_100`, and `sm_120`
+builds had source/binary hashes, PE/ELF format, embedded cubin targets, and help
+output verified. GPU arithmetic was exercised only on `sm_89`; running help
+on the other six binaries is not matching-GPU runtime validation.
+
+The published source includes portable CPU codec, efficiency, and Python
+helper/converter tests. Local GPU integration/interrupt harnesses, generated
+fixtures, and raw logs are not part of the source archive. SHA-256 integrity
+does not authenticate an untrusted producer or prove the mathematical history
+of a compact survivor list.
+
+Release scope: v2026.09.7 updates only the eight GFNSV binaries. The other
+40 executables are reused byte-for-byte from v2026.09.6 with unchanged
+component source/header hashes and retained prior test evidence. This is not
+a rebuild or new full mathematical validation of all 48 binaries. The
+historical GFNSV 1.0 sections below describe that version's larger factor-table
+format and earlier tests, not the v4 file layout.
 
 ## Windows console UTF-8 rebuild (v2026.09.6)
 

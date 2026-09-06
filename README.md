@@ -4,9 +4,10 @@ This repository collects six CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
-The [v2026.09.6 rebuild](docs/releases/v2026.09.6.md) fixes Windows console
-banner encoding in all six tools while retaining the component versions below.
-Redirected logs remain UTF-8; manual `chcp` is unnecessary for direct console use.
+The [v2026.09.7 release](docs/releases/v2026.09.7.md) updates GFNSV to 1.1 with
+self-contained single-file recovery, optional factor logs, efficiency stopping,
+and offline candidate-task conversion. The other five tools retain their
+component versions and byte-identical v2026.09.6 executables.
 
 > [!IMPORTANT]
 > A probable-prime (PRP) result is not a deterministic primality proof. Treat a
@@ -21,7 +22,7 @@ Redirected logs remain UTF-8; manual `chcp` is unnecessary for direct console us
 | [`GFPS/`](GFPS/) | 4.4 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
 | [`GSRPS/`](GSRPS/) | 2.3 | Checks generalized Sierpinski/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
 | [`GFPPS/`](GFPPS/) | 1.0 | Checks generalized factorial/primorial candidates `k*n!+/-1` and `k*n#+/-1`. |
-| [`GFNSV/`](GFNSV/) | 1.0 | GPU-sieves even bases for `b^(2^n)+1`, with saved-state continuation. |
+| [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
 | [`GSRSV/`](GSRSV/) | 2.0 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
 | [`GNCWSV/`](GNCWSV/) | 1.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
 
@@ -50,8 +51,9 @@ just the `b < 2^63` storage limit. **Current production modes support only
 GFPS 4.4 retains half-length negacyclic NTT and checked carry batches, and
 fuses carry rotation, convergence checking, and RNS export for 100%-duty
 batches. GSRPS 2.3 uses condition-checked weighted scans and compact carry
-reduction, retaining the exact fallback where required. GFNSV 1.0 adds GPU
-sieving for generalized Fermat searches; the older CPU GFNSV is not bundled.
+reduction, retaining the exact fallback where required. GFNSV 1.1 provides GPU
+sieving with portable single-file recovery, progress/ETA, and optional
+efficiency limits; the older CPU GFNSV is not bundled.
 GFPPS 1.0 adds general integer Montgomery arithmetic and portable checkpoints
 for factorial and primorial PRP checks. Its `n#` means the product of primes
 not exceeding `n`; arithmetic checkpoints require an explicit `--checkpoint FILE`.

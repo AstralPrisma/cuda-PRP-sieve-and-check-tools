@@ -1,158 +1,242 @@
-# GFNSV CUDA 1.0
+# GFNSV CUDA 1.1
 
 GFNSV is an integer-only GPU sieve for generalized Fermat candidates
+`N = b^(2^n) + 1`. The argument `n` is the power-of-two index: `-n16`
+means exponent 65536. It searches possible prime factors congruent to
+`1 mod 2^(n+1)` across an interval of even bases. Survivors still require PRP
+testing and independent verification; sieving is not a primality proof.
 
-```text
-N = b^(2^n) + 1
+Version 1.1 saves candidates and continuation state in **one self-contained
+file**. Default GFN output uses format version 4; no `.sieve-state` companion
+or factor log is required. Program and file-format versions are independent.
+
+中文：单个 `.gfn` 文件即可中断续筛和跨 Windows/Linux 恢复。`-O` 因子日志
+完全可选；不要删除或修改文件中的元数据、候选行和 SHA-256 校验末行。
+
+## Quick start
+
+From an extracted Linux release directory:
+
+```bash
+./bin/GFNSV_sm_89 -n16 -b1000000 -B1100000 -P1e12 -o result.gfn
+./bin/GFNSV_sm_89 -i result.gfn
+./bin/GFNSV_sm_89 -i result.gfn -P1e13
+./bin/GFNSV_sm_89 --checkpoint-info result.gfn
 ```
 
-The argument `n` is the power-of-two index, as in GFPS. With `--n 16`, the
-exponent is 65536. GFNSV tests possible prime factors congruent to
-`1 mod 2^(n+1)` and marks their roots across a contiguous interval of even
-bases. A surviving base is a candidate for a later PRP check, not a prime.
+On Windows, replace `./bin/GFNSV_sm_89` with `bin\GFNSV_sm_89.exe`. Select the
+binary for your GPU. Only `sm_89` has matching-device runtime validation on
+the development RTX 4060; `sm_86`, `sm_100`, and `sm_120` are cross-compiled.
 
-中文：这是 GFPS 的 GPU 筛子。`Ctrl+C` 会在当前 GPU 批次完成后保存，
-再次使用 `--resume` 可以从保存位置继续向更大的因子筛。版本仍为 1.0；
-旧 CPU GFNSV 没有包含在本仓库中。
+Both base bounds and factor bounds are inclusive. Only even `b >= 2` are
+considered. Default `n` is 16 and default lower factor bound is 3. Decimal,
+hexadecimal, underscores, and integer scientific notation such as `1e12` are
+accepted. Fresh output paths must not already exist.
 
-## Build and run
+Press Ctrl+C once, then wait for `reason=interrupt` and exit status 130. GFNSV
+finishes the current GPU batch and atomically saves its completed frontier.
+Resume an interrupted file with `-i`; a completed file needs a larger `-P`
+for new work. Use `-i result.gfn -P1e13 -o deeper.gfn` to preserve the original
+and save separately. `--resume result.gfn` and `--resume --out result.gfn`
+remain supported. `--checkpoint-info` validates without GPU work.
 
-Build from this directory on Linux/WSL with a CUDA toolkit and C++17 compiler:
+The main short/long option pairs are:
+
+```text
+-n / --n               GFN index
+-b / --bmin            Inclusive minimum base
+-B / --bmax            Inclusive maximum base
+-p / --pmin            Inclusive minimum factor
+-P / --pmax            Inclusive maximum factor
+-i / --inputterms      Saved file to resume
+-o / --outputterms     Output file; --out is also supported
+-f / --format          G, A, base, or expr
+-O / --outputfactors   Optional factor log; --factors is also supported
+-w / --batch           AP candidates per GPU batch
+```
+
+## Self-contained output and recovery
+
+The default `-f G` output has this structure:
+
+```text
+GFN n=16 // format=4 Sieved to P
+#GFNSV_COMPLETE version=4 engine=cuda n=16 ... format=G
+<one surviving even base per line>
+#GFNSV_END count=<survivor count> sha256=<digest>
+```
+
+This schematic shows a completed file and omits fields; actual files contain
+full metadata. Partial checkpoints use `#GFNSV_STATE` instead. The marker must
+agree with the stored frontier and target bound; inconsistent states are
+rejected.
+
+Metadata preserves the original base interval, requested factor bounds, and
+first unprocessed factor position. The footer covers the header, metadata,
+and ordered survivors using canonical LF text. Counts, ranges, order, bounds,
+and SHA-256 are checked before accepting a file. Malformed or truncated v4
+data is rejected even if an older companion exists alongside it.
+
+| Option | Header and survivor representation |
+| --- | --- |
+| `-f G` (default) | `GFN n=16 // format=4 Sieved to P`, then base values. |
+| `-f A` | `ABC $a^65536+1 // format=4 Sieved to P`, then base values. |
+| `--format base` | Metadata first, then base values. |
+| `--format expr` | Metadata first, then `b^65536+1` expressions. |
+
+All four formats are self-contained. Preserve the whole file for recovery;
+removing metadata discards trustworthy continuation state. SHA-256 detects
+damage and inconsistent edits; it is not a signature or proof that an
+untrusted producer performed the sieve correctly. Allow only one writer per
+output path.
+
+On resume, explicit `n`, base bounds, and `pmin` must match the stored search;
+they cannot silently skip unfinished work. `pmax` cannot move below the
+already processed factor interval. GPU device, batch size, and root mode may
+change between runs. Windows and Linux use the same file format.
+
+An initial snapshot is saved before GPU work. `--state-every S` saves at
+completed-batch boundaries, defaulting to 30 seconds; `0` disables periodic
+saves but retains initial, interrupt, and final saves. Process or power
+failure may require repeating work since the last successful save. Publication
+uses a flushed temporary file and atomic replacement; a failed replacement
+preserves the previous checkpoint. Wait for normal interruption to finish.
+
+## Optional factor audit log
+
+```bash
+./bin/GFNSV_sm_89 -n16 -b1000000 -B1100000 -P1e12 -o audit.gfn -O factors.txt
+./bin/GFNSV_sm_89 -i audit.gfn -P1e13 -O factors.txt
+```
+
+`-O`, `--outputfactors`, and `--factors` name the same optional log. Without
+them, no log is created. Losing the log does not prevent continuation from
+the main file. Default CPU verification checks newly retained factor values
+for divisibility and primality before saving. A prime equal to the candidate
+itself is not a proper factor. Historical removals in v4 are represented by
+the validated survivor set, not a mandatory factor table. `--no-verify`
+explicitly disables CPU mathematical verification for controlled diagnosis.
+
+An existing log's checksum, search identity, and factor records are validated
+before merging. A log cannot remove a current survivor. Omitted historical
+factors cannot be reconstructed from the survivor list: enabling logging later
+records available factors and subsequent discoveries. A failed log update
+reports an error after preserving the already-saved main checkpoint.
+
+## Progress and efficiency stopping
+
+Progress normally appears about once per second with `survivors`, `elapsed_s`,
+and `eta_s`. `--progress-seconds S` changes the interval (minimum 0.1 seconds).
+Updates occur at complete batch boundaries, so long batches can delay output.
+Fixed-`-P` ETA estimates use this run's completed arithmetic-progression
+candidates, excluding downtime before resume. `-q` / `--quiet` hides progress
+while keeping checkpoint and final messages.
+
+Supply all three positive finite limits to stop on low removal efficiency:
+
+```bash
+./bin/GFNSV_sm_89 -n16 -b1000000 -B1100000 -o efficiency.gfn -4 60 -5 5 -6 10
+```
+
+- `-4 S` / `--max-factor-seconds S`: stop after more than S seconds without
+  a new removal, including before the full window is ready.
+- `-5 S` / `--max-average-factor-seconds S` / `--spftarget S`: after the full
+  rolling window is ready, stop if average seconds per new removal exceed S.
+- `-6 M` / `--efficiency-window-minutes M` / `--minutesforspf M`: rolling
+  window length in minutes. Removals, not repeated factors, are counted.
+
+Efficiency limits force `pmax=2^62-1`, overriding `-P`; ETA becomes
+`n/a(efficiency-stop)`. A normal efficiency stop saves the completed prefix as
+the file's finished sieve depth. Continue with a higher `-P`, or pass all three
+limits again. Limits are not stored in the file; timers reset on resume.
+
+## Offline conversion to GFPS task files
+
+Both platform archives include `scripts/gfnsv_to_cands.py` and its sibling
+`scripts/gfnsv_queue.py`. Keep both files together. They need Python 3.10+
+and only the standard library; no GPU, CUDA, network, or credentials.
+
+```bash
+python3 scripts/gfnsv_to_cands.py result.gfn --out-dir cands_new --dry-run
+python3 scripts/gfnsv_to_cands.py result.gfn --out-dir cands_new
+```
+
+On Windows use `python`. Conversion requires a complete, valid snapshot and
+defaults to `--expected-n 16`. For another n, pass `--expected-n N` and use a
+separate, matching project and output directory. The script reads one validated
+snapshot without modifying it and never uploads tasks. Dry-run creates no
+output directory, files, or import caches.
+
+Each survivor becomes `cand_<b>.txt` containing one base and an LF newline.
+`.gfn-tasks.json` binds the directory to one n. Byte-identical existing tasks
+are skipped; conflicting content, unrelated old `cand_*.txt`, missing or
+incompatible manifests, and symlink/reparse targets are rejected before task
+writes. Use a new empty directory after deepening a sieve. No user files are
+deleted. Partial failure can leave complete installed tasks that a retry skips.
+Allow only one writer per output directory, including on filesystems whose
+atomic-install fallback lacks hard-link support.
+
+The JSON summary reports counts, n, sieve depth, and state digest; it is not a
+candidate task. Conversion performs no PRP checks. Some PRP clients separately
+back up a full snapshot before consuming a plain queue. That consumption backup
+is unrelated to GFNSV single-file recovery and is not made by this converter.
+
+## Legacy migration
+
+Full CUDA v3 checkpoints remain readable. Old bare GFN/ABC exports require
+their original checksum-validated v3 `<file>.sieve-state` companion for
+migration; the export must contain all survivors of that state. Plain sparse
+lists, consumed plain PRP queues, and legacy CPU checkpoints are not safe
+recovery inputs.
+
+```bash
+./bin/GFNSV_sm_89 -i old.gfn -o upgraded.gfn
+./bin/GFNSV_sm_89 -i old_v3.txt -f G -o upgraded.gfn
+./bin/GFNSV_sm_89 --checkpoint-info upgraded.gfn
+```
+
+Once a saved `format=4` file has passed validation, its old companion is no
+longer read and may be archived. Keep migration inputs until the new standalone
+file is checked. New-format failures never fall back to legacy state. The
+converter also accepts complete v3 files and validated old GFN/ABC-plus-v3
+pairs solely for migration.
+
+## Build and limits
+
+From the source repository's `GFNSV` directory:
 
 ```bash
 ./scripts/build-linux.sh build sm_89
 ```
 
-On Windows, use a CUDA-supported x64 MSVC toolchain and set `BOOST_ROOT` to the
-directory containing `boost/` before running:
-
 ```bat
 scripts\build-windows.bat build sm_89
 ```
 
-Boost is used only by the Windows host-side 128-bit arithmetic. The CUDA
-kernels use integer arithmetic on both platforms. There is no primesieve
-runtime dependency. Keep `src/GFNSV.cu` and `src/gfnsv_state.hpp` together when
-building from source.
+Use a CUDA toolkit supporting the target and a C++17 host compiler. Windows
+requires a CUDA-supported x64 MSVC toolchain and `BOOST_ROOT` pointing to the
+directory containing `boost/` for host-side 128-bit arithmetic. There is no
+primesieve runtime dependency. Keep all six source files together in `src/`:
+`GFNSV.cu`, `gfnsv_state.hpp`, `gfnsv_compact.hpp`, `gfnsv_output.hpp`,
+`gfnsv_efficiency.hpp`, and `console_utf8.hpp`. Omit the architecture argument
+to build all four release targets.
 
-Omit the architecture to build `sm_86`, `sm_89`, `sm_100`, and `sm_120`.
-Select the binary for the target GPU; only `sm_89` has been runtime-tested on
-the development RTX 4060. Examples below use `./GFNSV_sm_89`; on Windows use
-`GFNSV_sm_89.exe` with the same arguments.
+- Supported `n=1..20`, `3 <= pmin <= pmax <= 2^62-1`.
+- At most `64 * 1024 * 1024` original even-base slots in a contiguous interval;
+  the CUDA sieve still needs memory for the original interval on resume.
+- `-w` / `--batch` selects 1..1048576 possible AP factors per batch, default
+  65536; it is neither the number of primes nor the number of bases.
+- `--device N` selects a CUDA device, default 0. `--root-pairs` is the default;
+  `--full-roots` is the independent enumeration mode for comparisons.
 
-## A fresh sieve
+Root modes must agree on survivors; concurrent discovery can choose different
+valid first factors. Compare survivors and independently validate factors
+instead of requiring identical factor discovery order.
 
-```bash
-./GFNSV_sm_89 --n 16 \
-  --bmin 1814570322693370 --bmax 1814570323383368 \
-  --pmax 1e12 --out candidates.txt --factors factors.txt
-```
-
-Both base bounds and factor bounds are inclusive. The default lower factor
-bound is 3. Only even `b >= 2` is included. Decimal, hexadecimal, underscores,
-and integer scientific notation such as `1e12` are accepted.
-
-The default output format has one surviving base per non-comment line.
-`--format expr` writes `b^65536+1`-style expressions instead. Lines beginning
-with `#` carry the resume metadata, removed-candidate factors, and checksum.
-Keep the complete file for resuming; extracting the non-comment lines creates
-a candidate list but discards its resume capability.
-
-CPU verification checks each recorded factor's divisibility and independently
-tests the primality of distinct factors by default. `--no-verify` disables this
-check and is intended for controlled diagnosis. A trial prime equal to the
-candidate itself is not treated as a proper factor.
-
-## Interrupt, save, and resume
-
-Press `Ctrl+C` and wait for `checkpoint: saved ... reason=interrupt` and the
-exit message. The checker finishes the already-started GPU batch, writes a
-consistent checkpoint to `--out`, and exits with status 130. It advances the
-saved frontier only after every root of that batch has been processed.
-
-Continue the same search:
-
-```bash
-./GFNSV_sm_89 --resume --out candidates.txt --factors factors.txt
-```
-
-The shorter form also works:
-
-```bash
-./GFNSV_sm_89 --resume candidates.txt
-```
-
-The saved file supplies `n`, base bounds, factor bounds, format, survivors,
-known factors, and the first unprocessed factor position. Explicit `--n`,
-base bounds, `--pmin`, or format must agree with the saved metadata; they
-cannot silently change the candidate family or skip part of the saved work.
-
-To extend a finished or interrupted sieve to a larger factor bound:
-
-```bash
-./GFNSV_sm_89 --resume candidates.txt --pmax 2e12 --factors factors.txt
-```
-
-Changing `--pmax` cannot move the requested end below the already processed
-factor interval. Batch size, GPU device, and root enumeration mode may be
-changed between runs. Windows and Linux use the same state format.
-
-Useful state controls:
-
-```text
---state-every S          Save periodically after completed batches; default 30 seconds.
-                         0 saves on handled interruption and completion only.
---checkpoint-info FILE  Validate and inspect a saved file without using a GPU.
-```
-
-An initial recoverable snapshot is also written before GPU work. A process or
-power failure can require repeating work after the last saved batch; ordinary
-`Ctrl+C` saves the current completed batch. State replacement uses a flushed
-temporary file and platform replacement operations, preserving the preceding
-state if the new write fails.
-
-State format version 3 is independent of the program version 1.0. SHA-256
-covers metadata and records; loading checks the header/footer, bounds, record
-count and order, and completed frontier. Truncated, changed, or mismatched
-files are rejected. An arbitrary sparse candidate file, an old CPU state, or
-the earlier CUDA plain output is not accepted as a resume checkpoint.
-
-`--factors` is an optional export of factors stored in the checkpoint. It can
-be regenerated on resume; it is not required to continue. Existing factor
-exports are replaced only when their metadata belongs to the same search.
-Fresh searches require unused output paths.
-
-## GPU controls and comparisons
-
-```text
---device N       CUDA device index; default 0.
---batch N        Arithmetic-progression candidates per batch; default 65536,
-                  range 1..1048576. These are possible factors, not base count.
---root-pairs     Mark r and -r together; default, faster.
---full-roots     Enumerate every root independently for comparisons.
---quiet          Suppress batch progress; keep checkpoint and final messages.
-```
-
-The two root modes must produce the same surviving bases. Factor files may
-record different valid first factors because GPU workers run concurrently.
-Compare candidate lines and independently validate factors rather than
-requiring identical factor discovery order. A smaller batch reduces the time
-between interrupt checks and checkpoint opportunities, at some launch overhead.
-
-## Bounds and validation
-
-- `n=1..20`, `3 <= pmin <= pmax <= 2^62-1`.
-- A fresh run accepts a contiguous base interval and at most 64 million even
-  candidate slots. Resuming restores that interval; arbitrary sparse input
-  lists are not supported.
-- Available device memory must accommodate the factor vector and batch data.
-- Standard output flushes through pipes, including Windows, so progress can
-  be displayed by an outer client while the sieve is running.
-
-The initial arithmetic validation compared 14 cases in paired/full-root modes
-on both Windows and Linux (56 comparisons), with the archived CPU sieve and
-additional independent integer cases. It included small prime preservation,
-64-bit base boundaries, factors through 61 bits, and 345,000 GFN16 candidates
-through `10^12`. See [validation notes](../docs/validation-2026-09.md).
-
-Run `./GFNSV_sm_89 --help` for the authoritative options of the binary in use.
+The 1.1 validation includes 47 CLI cases, 141 C++ compact-codec checks,
+cross-language fixtures, Python tests, and real Windows/Linux interruptions
+followed by standalone cross-platform resume. Only `sm_89` GPU execution is
+claimed. See the repository's
+[validation notes](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/blob/v2026.09.7/docs/validation-2026-09.md).
+Portable CPU test instructions are in [TESTING.md](TESTING.md).
+Run the binary's `--help` for its authoritative command reference.

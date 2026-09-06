@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.6",
+    [string]$SuiteVersion = "v2026.09.7",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = ""
@@ -17,7 +17,7 @@ $versions = [ordered]@{
     GFPS = "4.4"
     GSRPS = "2.3"
     GFPPS = "1.0"
-    GFNSV = "1.0"
+    GFNSV = "1.1"
     GSRSV = "2.0"
     GNCWSV = "1.0"
 }
@@ -66,6 +66,20 @@ function Get-SourceFiles([string]$Tool) {
     return $records
 }
 
+function Get-SupportingFiles([string]$Tool) {
+    $records = [ordered]@{}
+    # Explicit allowlist: ship the converter with its sibling import on both
+    # platforms, without copying test fixtures, caches, or local scripts.
+    if ($Tool -eq "GFNSV") {
+        foreach ($name in @("scripts/gfnsv_to_cands.py", "scripts/gfnsv_queue.py")) {
+            $supportPath = Join-Path (Join-Path $repoDirectory $Tool) $name
+            if (-not [IO.File]::Exists($supportPath)) { throw "Missing supporting file: $Tool/$name" }
+            $records[$name] = Get-Sha256 $supportPath
+        }
+    }
+    return $records
+}
+
 function Invoke-External([scriptblock]$Command, [string]$Description) {
     & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE" }
@@ -84,6 +98,8 @@ try {
     # Validate the full provenance matrix before replacing any package directory.
     foreach ($tool in $versions.Keys) {
         $sourceFiles = Get-SourceFiles $tool
+        # Check required runtime helpers before replacing any package output.
+        $supportingFiles = Get-SupportingFiles $tool
         foreach ($platform in @("linux", "windows")) {
             $key = "$tool/$platform"
             $property = $buildMetadata.builds.PSObject.Properties[$key]
@@ -124,6 +140,7 @@ try {
     foreach ($tool in $versions.Keys) {
         $version = $versions[$tool]
         $sourceFiles = Get-SourceFiles $tool
+        $supportingFiles = Get-SupportingFiles $tool
         foreach ($platform in @("linux", "windows")) {
             $buildRecord = $buildMetadata.builds.PSObject.Properties["$tool/$platform"].Value
             $suffix = if ($platform -eq "windows") { ".exe" } else { "" }
@@ -158,6 +175,15 @@ try {
             Get-ChildItem -LiteralPath (Join-Path $repoDirectory $tool) -File -Filter "*.md" | ForEach-Object {
                 [IO.File]::Copy($_.FullName, (Join-Path $componentStage $_.Name), $true)
             }
+            foreach ($name in $supportingFiles.Keys) {
+                $supportSource = Join-Path (Join-Path $repoDirectory $tool) $name
+                $supportTarget = Join-Path $componentStage $name
+                [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($supportTarget)) | Out-Null
+                [IO.File]::Copy($supportSource, $supportTarget, $true)
+                if ((Get-Sha256 $supportTarget) -ne $supportingFiles[$name]) {
+                    throw "Supporting file hash mismatch: $tool/$name"
+                }
+            }
             [IO.File]::Copy((Join-Path $repoDirectory "LICENSE"), (Join-Path $componentStage "LICENSE"), $true)
             [IO.File]::Copy((Join-Path $repoDirectory "THIRD_PARTY_NOTICES.md"), (Join-Path $componentStage "THIRD_PARTY_NOTICES.md"), $true)
             [IO.File]::Copy((Join-Path $repoDirectory "docs\correctness.md"), (Join-Path $componentStage "CORRECTNESS.md"), $true)
@@ -180,10 +206,15 @@ try {
                 "Test GPU: $($buildRecord.test_hardware)"
                 "Source SHA-256: $(Get-Sha256 (Join-Path $repoDirectory "$tool\src\$tool.cu"))"
                 "Source file hashes: $($sourceFiles | ConvertTo-Json -Compress)"
+                "Supporting file hashes: $($supportingFiles | ConvertTo-Json -Compress)"
                 "Runtime test evidence: $($buildRecord.binaries | ConvertTo-Json -Depth 5 -Compress)"
                 "Each binary contains native cubins and compiler-emitted PTX matched to its named target."
                 "Separate binaries are used instead of one universal executable for all GPU generations."
             )
+            if ($buildRecord.reused_from) {
+                $buildInfo += "Reused binary provenance: $($buildRecord.reused_from | ConvertTo-Json -Depth 8 -Compress)"
+                $buildInfo += "Binaries were reused byte-for-byte after source/header and binary hash verification; recorded runtime evidence is retained from the earlier build."
+            }
             [IO.File]::WriteAllLines((Join-Path $componentStage "BUILDINFO.txt"), $buildInfo, $utf8)
 
             $archiveName = "$($tool.ToLowerInvariant())-$version-$hostPlatform-cuda13.3$archiveExtension"
@@ -199,13 +230,14 @@ try {
                 } "Linux tar.xz packaging"
             }
 
-            $packageRecords += [ordered]@{
+            $packageRecord = [ordered]@{
                 file = $archiveName
                 tool = $tool
                 component_version = $version
                 source_commit = $commit
                 source_sha256 = Get-Sha256 (Join-Path $repoDirectory "$tool\src\$tool.cu")
                 source_files = $sourceFiles
+                supporting_files = $supportingFiles
                 artifact_sha256 = Get-Sha256 $archivePath
                 compiler = $compiler
                 compiler_flags = @($buildRecord.flags)
@@ -216,6 +248,8 @@ try {
                 test_hardware = $buildRecord.test_hardware
                 binaries = $binaryRecords
             }
+            if ($buildRecord.reused_from) { $packageRecord.reused_from = $buildRecord.reused_from }
+            $packageRecords += $packageRecord
         }
     }
 

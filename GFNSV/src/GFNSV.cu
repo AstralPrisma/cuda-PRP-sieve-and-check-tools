@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 AstralPrisma (A.P.)
  */
-// Integer-only GPU interval sieve for N=b^(2^n)+1, version 1.0.
+// Integer-only GPU interval sieve for N=b^(2^n)+1, version 1.1.
 // SHA-256-protected single-file checkpoints support Ctrl+C and continued sieving.
 // Linux build: nvcc -O3 -std=c++17 -arch=sm_89 GFNSV.cu -o GFNSV
 #ifdef _WIN32
@@ -31,6 +31,8 @@
 #include <utility>
 #include <vector>
 #include "gfnsv_state.hpp"
+#include "gfnsv_output.hpp"
+#include "gfnsv_efficiency.hpp"
 #if defined(_MSC_VER)
 #include <boost/multiprecision/cpp_int.hpp>
 #endif
@@ -92,6 +94,7 @@ static void ck(cudaError_t e, const char* what) {
 #define CUDA(x) ck((x), #x)
 static constexpr u64 MAX_P = (1ULL << 62) - 1;
 static constexpr unsigned ROOT_THREADS = 256;
+static constexpr double PROGRESS_INTERVAL_SECONDS = 1.0;
 
 struct Mont {
     u64 p, ni, r2, one;
@@ -175,20 +178,24 @@ __device__ bool same_as_factor(u64 b, unsigned n, u64 p) {
     }
     return v==target;
 }
-__device__ __forceinline__ void mark_root(u64 r,const Prime& rec,unsigned n,u64 bstart,u64 slots,u64* first_factor) {
+__device__ __forceinline__ void mark_root(u64 r,const Prime& rec,unsigned n,u64 bstart,u64 slots,
+                                         u64* first_factor,u64* removed_total) {
     u64 delta=r>=rec.start_mod?r-rec.start_mod:rec.m.p-(rec.start_mod-r);
     if(delta&1) delta+=rec.m.p;
     u64 idx=delta>>1;
     while(idx<slots) {
         u64 b=bstart+2*idx;
-        if(!same_as_factor(b,n,rec.m.p)) atomicCAS(first_factor+idx,0ULL,rec.m.p);
+        // Only the thread that removes this candidate for the first time counts
+        // it. Repeated roots, factors and resumed removals cannot double-count.
+        if(!same_as_factor(b,n,rec.m.p) && atomicCAS(first_factor+idx,0ULL,rec.m.p)==0ULL)
+            atomicAdd(removed_total,1ULL);
         // slots <= 64M, p <= 2^62-1: no overflow.
         idx+=rec.m.p;
     }
 }
 template<bool PairRoots>
 __global__ void sieve_roots(const Prime* primes, unsigned n, u64 bstart,
-                           u64 slots, u64* first_factor) {
+                           u64 slots, u64* first_factor, u64* removed_total) {
     Prime rec=primes[blockIdx.x];
     const Mont& m=rec.m;
     u64 root=mm(rec.h,mpow(rec.mult,threadIdx.x,m),m);
@@ -196,8 +203,8 @@ __global__ void sieve_roots(const Prime* primes, unsigned n, u64 bstart,
     unsigned total=1U<<(n-(PairRoots?1:0));
     for(unsigned j=threadIdx.x;j<total;j+=ROOT_THREADS) {
         u64 r=mm(root,1,m);
-        mark_root(r,rec,n,bstart,slots,first_factor);
-        if(PairRoots)mark_root(m.p-r,rec,n,bstart,slots,first_factor);
+        mark_root(r,rec,n,bstart,slots,first_factor,removed_total);
+        if(PairRoots)mark_root(m.p-r,rec,n,bstart,slots,first_factor,removed_total);
         root=mm(root,rec.stride,m);
     }
 }
@@ -251,51 +258,99 @@ struct Options {
     unsigned n=16,batch=65536,device=0;
     u64 bmin=0,bmax=0,pmin=3,pmax=0;
     bool verify=true,quiet=false,pairs=true;
-    std::string out="cand_gpu.txt", factors, format="base";
+    std::string out="cand_gpu.txt", factors, format="G";
     bool resume=false,n_given=false,bmin_given=false,bmax_given=false;
     bool pmin_given=false,pmax_given=false,format_given=false,out_given=false;
-    std::string resume_file;
-    double state_every=30.0;
+    std::string resume_file,resolved_state,state_out;
+    bool inline_resume=false,output_owned=false,state_owned=false;
+    double state_every=30.0,progress_every=PROGRESS_INTERVAL_SECONDS;
+    gfnsv_efficiency::Config efficiency;
 };
 static void usage() {
-    std::cout<<"GFNSV CUDA 1.0 (integer-only, root/prime parallelism)\n"
-      <<"  --n N --bmin B --bmax B --pmax P [options]\n"
+    std::cout<<"GFNSV CUDA 1.1 (integer-only, root/prime parallelism)\n"
+      <<"  -n N -b BMIN -B BMAX -P PMAX [options]\n"
       <<"Ranges are inclusive. Only even b>=2 are considered. n=1..20; p<=2^62-1.\n"
-      <<"  --pmin P           inclusive lower factor bound (default 3)\n"
-      <<"  --batch N          AP candidates per GPU batch (default 65536, max 1048576)\n"
+      <<"  -b, --bmin B       minimum base\n"
+      <<"  -B, --bmax B       maximum base (included)\n"
+      <<"  -n, --n N          GFN index: exponent=2^N (default 16 means 65536)\n"
+      <<"  -p, --pmin P       inclusive lower factor bound (default 3)\n"
+      <<"  -P, --pmax P       inclusive upper factor bound\n"
+      <<"  -w, --batch N      AP candidates per GPU batch, NOT primes (default 65536)\n"
       <<"  --device N         CUDA device (default 0)\n"
-      <<"  --out FILE         sorted surviving bases, default cand_gpu.txt\n"
-      <<"  --resume [FILE]    continue a saved CUDA checkpoint; otherwise uses --out\n"
+      <<"  -o, --outputterms FILE  candidate output; --out remains an alias\n"
+      <<"  -i, --inputterms FILE   resume a self-contained GFN/ABC file or old CUDA state\n"
+      <<"  --resume [FILE]    same resume operation; omitted FILE uses --out\n"
+      <<"  -f, --format G|A|base|expr  all outputs are self-contained; G=GFN (default)\n"
+      <<"  -O, --outputfactors FILE  OPTIONAL factor log; not needed for resume\n"
+      <<"  --progress-seconds S    progress interval, default 1; minimum 0.1\n"
       <<"  --state-every S    periodic save interval in seconds, default 30; 0=interrupt/end only\n"
       <<"  --checkpoint-info FILE  inspect a saved checkpoint without using the GPU\n"
-      <<"  --factors FILE     one factor per removal (CPU verified by default)\n"
-      <<"  --format base|expr output format\n"
       <<"  --no-verify        omit independent CPU factor verification\n"
+      <<"  --verify           independently verify saved factors on CPU (default)\n"
       <<"  --root-pairs       paired roots r and -r (default, faster)\n"
       <<"  --full-roots       enumerate every root (reference path)\n"
-      <<"  --quiet            hide batch progress\n"
+      <<"  -q, --quiet        hide progress; checkpoint/final messages remain\n"
+      <<"Lowest acceptable efficiency (supply all three, same units as GSRSV):\n"
+      <<"  -4, --max-factor-seconds S          stop after S seconds with no new removal\n"
+      <<"  -5, --max-average-factor-seconds S  stop when rolling seconds/removal exceeds S\n"
+      <<"      --spftarget S                   alias for -5\n"
+      <<"  -6, --efficiency-window-minutes M   full rolling window length\n"
+      <<"      --minutesforspf M               alias for -6\n"
+      <<"Efficiency limits force pmax=2^62-1, overriding -P. Timers reset on resume.\n"
+      <<"A normal efficiency stop saves the completed prefix; repeat the limits to continue it.\n"
+      <<"Progress includes survivors and eta_s estimated from this run's completed AP batches.\n"
+      <<"ETA is n/a for efficiency-controlled stopping. Updates occur at completed batch boundaries.\n"
       <<"Decimal/hex/underscores/integer scientific notation accepted.\n"
-      <<"Ctrl+C drains the current GPU batch, saves --out atomically, and exits with code 130.\n"
-      <<"Resume restores n/base range/progress from the same file; --pmax may extend the search.\n"
-      <<"Checkpoint comments store progress, factors, and SHA-256; non-comment lines are survivors.\n"
-      <<"Fresh output must not exist. Arbitrary sparse/legacy CPU files are not resume checkpoints.\n"
+      <<"Ctrl+C drains the batch and atomically saves one self-contained file; exit code 130.\n"
+      <<"Default header: GFN n=16 // format=4 Sieved to P; body lists surviving b values.\n"
+      <<"Small metadata and SHA-256 footer detect damage; no historical factor table is required.\n"
+      <<"No .sieve-state is created. Old v3 files and old GFN+state pairs can migrate on resume.\n"
+      <<"Historical factor details are omitted unless retained in an optional -O log.\n"
+      <<"Fresh outputs must not exist. Bare sparse/legacy CPU files are not safe resume states.\n"
       <<"Maximum 64M candidate slots; partial and completed CUDA checkpoints can both resume.\n";
+}
+static double duration_value(const std::string& text,const std::string& option,double minimum) {
+    std::size_t used=0;
+    const double value=std::stod(text,&used);
+    if(used!=text.size()||!std::isfinite(value)||value<minimum||value<=0)
+        throw std::runtime_error(option+" must be a finite positive number");
+    return value;
 }
 static Options options(int argc,char**argv) {
     Options o;
     for(int i=1;i<argc;++i) {
         std::string a=argv[i];
-        auto val=[&](){if(++i>=argc)throw std::runtime_error("missing value for "+a);return std::string(argv[i]);};
-        if(a=="--n") {u64 v=number(val());if(v<1||v>20)throw std::runtime_error("n must be 1..20");o.n=unsigned(v);o.n_given=true;}
-        else if(a=="--bmin") {o.bmin=number(val());o.bmin_given=true;}
-        else if(a=="--bmax") {o.bmax=number(val());o.bmax_given=true;}
-        else if(a=="--pmin") {o.pmin=number(val());o.pmin_given=true;}
-        else if(a=="--pmax") {o.pmax=number(val());o.pmax_given=true;}
-        else if(a=="--batch") {u64 v=number(val());if(v<1||v>1048576)throw std::runtime_error("batch must be 1..1048576");o.batch=unsigned(v);}
+        std::string attached;
+        bool has_attached=false;
+        const auto equal=a.find('=');
+        if(a.rfind("--",0)==0&&equal!=std::string::npos) {
+            attached=a.substr(equal+1);a.resize(equal);has_attached=true;
+        }else if(a.size()>2&&a[0]=='-'&&std::string("bBnpPwoOif456").find(a[1])!=std::string::npos) {
+            attached=a.substr(2);a.resize(2);has_attached=true;
+            if(!attached.empty()&&attached[0]=='=')attached.erase(0,1);
+        }
+        auto val=[&](){
+            if(has_attached){has_attached=false;return attached;}
+            if(++i>=argc)throw std::runtime_error("missing value for "+a);
+            return std::string(argv[i]);
+        };
+        if(a=="--n"||a=="-n") {u64 v=number(val());if(v<1||v>20)throw std::runtime_error("n must be 1..20");o.n=unsigned(v);o.n_given=true;}
+        else if(a=="--bmin"||a=="-b") {o.bmin=number(val());o.bmin_given=true;}
+        else if(a=="--bmax"||a=="-B") {o.bmax=number(val());o.bmax_given=true;}
+        else if(a=="--pmin"||a=="-p") {o.pmin=number(val());o.pmin_given=true;}
+        else if(a=="--pmax"||a=="-P") {o.pmax=number(val());o.pmax_given=true;}
+        else if(a=="--batch"||a=="-w") {u64 v=number(val());if(v<1||v>1048576)throw std::runtime_error("batch must be 1..1048576");o.batch=unsigned(v);}
         else if(a=="--device") {u64 v=number(val());if(v>1024)throw std::runtime_error("invalid device");o.device=unsigned(v);}
-        else if(a=="--out") {o.out=val();o.out_given=true;}
-        else if(a=="--factors")o.factors=val();
-        else if(a=="--format") {o.format=val();o.format_given=true;}
+        else if(a=="--out"||a=="--outputterms"||a=="-o") {o.out=val();o.out_given=true;}
+        else if(a=="--factors"||a=="--outputfactors"||a=="-O")o.factors=val();
+        else if(a=="--format"||a=="-f") {o.format=val();o.format_given=true;}
+        else if(a=="--progress-seconds")o.progress_every=duration_value(val(),a,0.1);
+        else if(a=="-4"||a=="--max-factor-seconds"||a=="--max-no-factor-seconds")
+            o.efficiency.max_factor_seconds=duration_value(val(),a,0.0);
+        else if(a=="-5"||a=="--max-average-factor-seconds"||a=="--max-average-seconds-per-factor"||a=="--spftarget")
+            o.efficiency.max_average_factor_seconds=duration_value(val(),a,0.0);
+        else if(a=="-6"||a=="--efficiency-window-minutes"||a=="--minutesforspf")
+            o.efficiency.window_minutes=duration_value(val(),a,0.0);
         else if(a=="--state-every") {
             const std::string text=val();std::size_t used=0;
             o.state_every=std::stod(text,&used);
@@ -303,31 +358,46 @@ static Options options(int argc,char**argv) {
                 throw std::runtime_error("--state-every must be 0..86400 seconds");
         }
         else if(a=="--no-verify")o.verify=false;
+        else if(a=="--verify")o.verify=true;
         else if(a=="--root-pairs")o.pairs=true;
         else if(a=="--full-roots")o.pairs=false;
-        else if(a=="--quiet")o.quiet=true;
+        else if(a=="--quiet"||a=="-q")o.quiet=true;
         else if(a=="--help"||a=="-h") {usage();std::exit(0);}
-        else if(a=="--resume") {
+        else if(a=="--resume"||a=="--inputterms"||a=="-i") {
             if(o.resume)throw std::runtime_error("--resume specified more than once");
             o.resume=true;
-            if(i+1<argc && argv[i+1][0]!='-')o.resume_file=val();
+            if(a!="--resume"||has_attached||(i+1<argc&&argv[i+1][0]!='-'))o.resume_file=val();
         }
         else throw std::runtime_error("unknown option: "+a);
+        if(has_attached)throw std::runtime_error(a+" does not accept a value");
     }
+    o.efficiency.validate();
+    if(o.efficiency.max_factor_seconds>0) {o.pmax=MAX_P;o.pmax_given=true;}
     if(!o.resume && (o.bmin<2||o.bmax<o.bmin||o.pmin<3||o.pmax<o.pmin||o.pmax>MAX_P))
         throw std::runtime_error("invalid b/p range (bmin>=2, pmax<=2^62-1)");
-    if(o.format!="base"&&o.format!="expr")throw std::runtime_error("format must be base or expr");
+    if(o.format=="a"||o.format=="ABC"||o.format=="abc")o.format="A";
+    if(o.format=="g"||o.format=="GFN"||o.format=="gfn")o.format="G";
+    if(!gfnsv_output::is_view_format(o.format)&&o.format!="base"&&o.format!="expr")
+        throw std::runtime_error("format must be G (GFN), A (ABC), base or expr; fixed-base NewPGen is not a GFN format");
     if(o.resume) {
         if(!o.resume_file.empty()&&!o.out_given)o.out=o.resume_file;
         if(o.resume_file.empty())o.resume_file=o.out;
+        o.inline_resume=gfnsv_output::legacy_state(o.resume_file);
+        o.resolved_state=gfnsv_output::resume_state(o.resume_file);
+        if(!o.format_given)o.format=o.inline_resume?"base":gfnsv_output::view_format(o.resume_file);
     }
     if(o.out.empty())throw std::runtime_error("output path must be nonempty");
+    o.state_out=o.out;
+    if(o.resume&&gfnsv_state::same_path(o.out,o.resolved_state)&&!gfnsv_state::same_path(o.out,o.resume_file))
+        throw std::runtime_error("output must not overwrite a different input's legacy companion checkpoint");
     if(!o.factors.empty() &&
        (gfnsv_state::same_path(o.out,o.factors)||
-        (o.resume&&gfnsv_state::same_path(o.resume_file,o.factors))))
-        throw std::runtime_error("candidate checkpoint and factor log must be different files");
-    const bool replacing_resume=o.resume&&gfnsv_state::same_path(o.out,o.resume_file);
-    if(!replacing_resume&&std::filesystem::exists(std::filesystem::u8path(o.out)))
+        gfnsv_state::same_path(o.state_out,o.factors)||
+        (o.resume&&(gfnsv_state::same_path(o.resume_file,o.factors)||gfnsv_state::same_path(o.resolved_state,o.factors)))))
+        throw std::runtime_error("candidate output, checkpoint and factor log must be different files");
+    o.output_owned=o.resume&&(gfnsv_state::same_path(o.out,o.resume_file)||gfnsv_state::same_path(o.out,o.resolved_state));
+    o.state_owned=o.output_owned;
+    if(!o.output_owned&&gfnsv_output::exists(o.out))
         throw std::runtime_error("output exists; use --resume --out FILE to continue it");
     if(!o.resume&&!o.factors.empty()&&std::filesystem::exists(std::filesystem::u8path(o.factors)))
         throw std::runtime_error("factor output exists; choose a new path");
@@ -353,6 +423,7 @@ static void verify_factors(const gfnsv_state::State& state) {
     const u64 frontier=gfnsv_state::next_p(state);
     std::vector<u64> used;
     for(std::size_t i=0;i<state.factors.size();++i)if(state.factors[i]) {
+        if(gfnsv_state::is_historical_removed(state,i))continue;
         const u64 b=first+2*static_cast<u64>(i),p=state.factors[i];
         if(p<state.pmin||p>state.pmax||p>=frontier||(p-1)%q||
            pow_host(b,1ULL<<state.n,p)!=p-1||same_host(b,state.n,p))
@@ -363,14 +434,19 @@ static void verify_factors(const gfnsv_state::State& state) {
     for(u64 p:used)if(!prime_host(p))throw std::runtime_error("non-prime factor in checkpoint");
 }
 
-static void persist_checkpoint(const Options& opt,const gfnsv_state::State& state,
+static void persist_checkpoint(Options& opt,const gfnsv_state::State& state,
                                const char* reason,bool& factor_owned) {
     if(opt.verify)verify_factors(state);
-    gfnsv_state::write_state_atomic(opt.out,state);
-    std::cout<<"checkpoint: saved path="<<opt.out
+    // A single atomic publication contains the verified survivor set and its
+    // complete resume metadata. Historical factor details are optional.
+    gfnsv_compact::write_state_atomic(opt.out,state,opt.format,opt.output_owned);
+    opt.state_owned=true;
+    opt.output_owned=true;
+    std::cout<<"checkpoint: saved path="<<opt.state_out
              <<", next_p="<<gfnsv_state::next_p(state)
              <<", survivors="<<(state.factors.size()-removed_count(state))
-             <<", reason="<<reason<<"\n";
+             <<", reason="<<reason;
+    std::cout<<"\n";
     if(!opt.factors.empty()) {
         try {
             gfnsv_state::write_factors_atomic(opt.factors,state,factor_owned);
@@ -384,12 +460,14 @@ static void persist_checkpoint(const Options& opt,const gfnsv_state::State& stat
 static gfnsv_state::State initial_state(Options& opt) {
     gfnsv_state::State state;
     if(opt.resume) {
-        state=gfnsv_state::read_state(opt.resume_file);
+        std::string saved_format;
+        state=gfnsv_output::read_resume_state(opt.resolved_state,&saved_format);
+        if(!opt.format_given&&gfnsv_state::same_path(opt.resume_file,opt.resolved_state))opt.format=saved_format;
         if((opt.n_given&&opt.n!=state.n)||
            (opt.bmin_given&&opt.bmin!=state.bmin)||
            (opt.bmax_given&&opt.bmax!=state.bmax)||
            (opt.pmin_given&&opt.pmin!=state.pmin)||
-           (opt.format_given&&(opt.format=="expr")!=state.expr))
+           (opt.format_given&&!gfnsv_output::is_view_format(opt.format)&&(opt.format=="expr")!=state.expr))
             throw std::runtime_error("resume n/base range/pmin/format does not match saved checkpoint");
         if(opt.pmax_given) {
             const u64 q=1ULL<<(state.n+1);
@@ -400,7 +478,10 @@ static gfnsv_state::State initial_state(Options& opt) {
             state.pmax=opt.pmax;
         }
         opt.n=state.n;opt.bmin=state.bmin;opt.bmax=state.bmax;
-        opt.pmin=state.pmin;opt.pmax=state.pmax;opt.format=state.expr?"expr":"base";
+        opt.pmin=state.pmin;opt.pmax=state.pmax;
+        if(!opt.inline_resume)gfnsv_output::validate_view_identity(opt.resume_file,state);
+        if(!opt.factors.empty()&&gfnsv_output::exists(opt.factors))
+            gfnsv_compact::merge_factor_log(opt.factors,state);
         if(opt.verify)verify_factors(state);
         std::cout<<"resume: loaded path="<<opt.resume_file<<", next_p="<<gfnsv_state::next_p(state)
                  <<", survivors="<<(state.factors.size()-removed_count(state))<<"\n";
@@ -416,7 +497,9 @@ static gfnsv_state::State initial_state(Options& opt) {
 }
 
 static int checkpoint_info(const std::string& path) {
-    const auto state=gfnsv_state::read_state(path);
+    const auto state_path=gfnsv_output::resume_state(path);
+    const auto state=gfnsv_output::read_resume_state(state_path);
+    gfnsv_output::validate_view_identity(path,state);
     std::cout<<"checkpoint-info: n="<<state.n<<", bmin="<<state.bmin<<", bmax="<<state.bmax
              <<", pmin="<<state.pmin<<", pmax="<<state.pmax
              <<", next_p="<<gfnsv_state::next_p(state)<<", next_k="<<state.next_k
@@ -436,7 +519,7 @@ void display_banner() {
     printf("%s\n","      `Y8bood8P'   Y8P o888o        Y8P o8o        `8  Y8P 8''88888P'  Y8P     `8'     Y8P      ");
     printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                                Generalized-Fermat-Number-Siever                                ");
-    printf("%s\n","                               Version 1.0 CUDA by A.P. Sept 2026                               ");
+    printf("%s\n","                               Version 1.1 CUDA by A.P. Sept 2026                               ");
 }
 
 #include "console_utf8.hpp"
@@ -488,28 +571,71 @@ int main(int argc,char**argv) {
         CUDA(cudaSetDevice(o.device));
         cudaDeviceProp prop{};CUDA(cudaGetDeviceProperties(&prop,o.device));
         std::size_t free=0,total=0;CUDA(cudaMemGetInfo(&free,&total));
-        std::size_t needed=slots*sizeof(u64)+o.batch*sizeof(Prime)+sizeof(unsigned);
+        std::size_t needed=slots*sizeof(u64)+o.batch*sizeof(Prime)+sizeof(unsigned)+sizeof(u64);
         if(needed>free/2)throw std::runtime_error("GPU free memory too low for safe allocation");
         DeviceArray<u64> factors(slots);
         DeviceArray<Prime> primes(o.batch);
         DeviceArray<unsigned> count(1);
+        DeviceArray<u64> removed_total(1);
         CUDA(cudaMemcpy(factors.p,state.factors.data(),slots*sizeof(u64),cudaMemcpyHostToDevice));
+        const u64 initial_removed=removed_count(state);
+        CUDA(cudaMemcpy(removed_total.p,&initial_removed,sizeof(u64),cudaMemcpyHostToDevice));
         u64 np=0,nk=0;
         u64 batches=0,stop_after_batches=0;
         if(const char* text=std::getenv("GFNSV_STOP_AFTER_BATCHES"))stop_after_batches=number(text);
         double prep_s=0,sieve_s=0;
         auto start=Clock::now();
         auto last_saved=start;
+        auto last_progress=start;
+        u64 last_reported_nk=0;
+        const u64 run_total_ap=klast-state.next_k+1;
+        gfnsv_efficiency::Monitor efficiency(o.efficiency);
+        u64 observed_removed=initial_removed;
+        bool efficiency_stopped=false;
+        std::string efficiency_reason;
+        const auto read_removed=[&]() {
+            u64 removed=0;
+            CUDA(cudaMemcpy(&removed,removed_total.p,sizeof(u64),cudaMemcpyDeviceToHost));
+            if(removed<initial_removed||removed>slots)
+                throw std::runtime_error("invalid GPU removal count");
+            return removed;
+        };
+        const auto report_progress=[&](bool final_update) {
+            if(o.quiet||nk==last_reported_nk)return;
+            if(!final_update&&seconds(last_progress)<o.progress_every)return;
+            // All roots have completed. Read just one scalar, not the full
+            // factor array, and base the ETA on work performed since resume.
+            const u64 removed=read_removed();
+            const double elapsed=seconds(start);
+            const u64 remaining_ap=run_total_ap-nk;
+            const double eta=remaining_ap==0?0.0:elapsed*(static_cast<double>(remaining_ap)/static_cast<double>(nk));
+            std::cout<<std::fixed<<std::setprecision(3)
+                     <<"progress: p="<<((state.next_k-1)*q+1)<<", primes="<<np
+                     <<", survivors="<<(slots-removed)
+                     <<", elapsed_s="<<elapsed<<", eta_s=";
+            if(efficiency.enabled())std::cout<<"n/a(efficiency-stop)";
+            else std::cout<<eta;
+            std::cout<<"\n";
+            last_progress=Clock::now();
+            last_reported_nk=nk;
+        };
         const auto snapshot=[&](const char* reason) {
             // Only called after all roots in the current batch have completed.
             CUDA(cudaMemcpy(state.factors.data(),factors.p,slots*sizeof(u64),cudaMemcpyDeviceToHost));
+            if(read_removed()!=removed_count(state))
+                throw std::runtime_error("GPU removal count does not match checkpoint factors");
             persist(reason);
             last_saved=Clock::now();
         };
         std::cout<<"device="<<prop.name<<", n="<<o.n<<", candidates="<<slots
           <<", p=["<<gfnsv_state::next_p(state)<<","<<o.pmax<<"], batch="<<o.batch
           <<", root_pairs="<<(o.pairs?"yes":"no")<<", verify="<<(o.verify?"yes":"no")
-          <<", state_every="<<o.state_every<<"\n";
+          <<", state_every="<<o.state_every<<", progress_every_s="<<o.progress_every<<"\n";
+        if(efficiency.enabled())
+            std::cout<<"efficiency: max_factor_seconds="<<o.efficiency.max_factor_seconds
+                     <<", max_average_factor_seconds="<<o.efficiency.max_average_factor_seconds
+                     <<", window_minutes="<<o.efficiency.window_minutes
+                     <<", pmax="<<o.pmax<<" (overrides -P); timers start fresh for this run\n";
         while(state.next_k<=klast) {
             if(stopped)break;
             const u64 k=state.next_k;
@@ -523,8 +649,8 @@ int main(int argc,char**argv) {
             prep_s+=seconds(t);
             t=Clock::now();
             if(found) {
-                if(o.pairs)sieve_roots<true><<<found,ROOT_THREADS>>>(primes.p,o.n,first,slots,factors.p);
-                else sieve_roots<false><<<found,ROOT_THREADS>>>(primes.p,o.n,first,slots,factors.p);
+                if(o.pairs)sieve_roots<true><<<found,ROOT_THREADS>>>(primes.p,o.n,first,slots,factors.p,removed_total.p);
+                else sieve_roots<false><<<found,ROOT_THREADS>>>(primes.p,o.n,first,slots,factors.p,removed_total.p);
                 CUDA(cudaGetLastError());CUDA(cudaDeviceSynchronize());
             }
             sieve_s+=seconds(t);np+=found;nk+=batch;
@@ -532,12 +658,32 @@ int main(int argc,char**argv) {
             // in this batch have completed. Interrupts never skip a partial p.
             state.next_k=k+batch;
             ++batches;
-            if(!o.quiet)std::cout<<"progress: p="<<((k+batch-1)*q+1)<<", primes="<<np<<", elapsed_s="<<seconds(start)<<"\n";
+            if(efficiency.enabled()) {
+                // Sample every completed batch, independently of progress
+                // output throttling. Historical removals are not new events.
+                const u64 current_removed=read_removed();
+                if(current_removed<observed_removed)
+                    throw std::runtime_error("GPU removal count moved backwards");
+                const auto status=efficiency.observe(seconds(start),current_removed-observed_removed);
+                observed_removed=current_removed;
+                efficiency_stopped=status.stop;
+                efficiency_reason=status.reason;
+            }
+            report_progress(false);
             if(stop_after_batches!=0&&batches>=stop_after_batches)stopped=1;
             if(stopped)break;
+            if(efficiency_stopped)break;
             if(o.state_every>0&&seconds(last_saved)>=o.state_every)snapshot("periodic");
         }
-        snapshot(stopped?"interrupt":"complete");
+        report_progress(true);
+        if(efficiency_stopped&&!stopped) {
+            // Intentional efficiency completion owns only the verified prefix,
+            // not the old open-ended pmax. This allows safe PRP queue export.
+            state.pmax=gfnsv_output::sieved_to(state);
+            std::cout<<"efficiency-stop: "<<efficiency_reason
+                     <<"; completed prefix pmax="<<state.pmax<<"\n";
+        }
+        snapshot(stopped?"interrupt":efficiency_stopped?"efficiency":"complete");
         if(stopped)return interrupted();
         const u64 removed=removed_count(state);
         std::cout<<std::fixed<<std::setprecision(6)<<"done: tested_ap="<<nk<<", primes="<<np<<", roots="<<(np*(1ULL<<o.n))

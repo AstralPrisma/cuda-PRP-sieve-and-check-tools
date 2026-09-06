@@ -54,7 +54,15 @@ struct State {
     U64 bmin = 0, bmax = 0, pmin = 3, pmax = 0, next_k = 0;
     bool expr = false;
     std::vector<U64> factors;
+    // Compact checkpoints omit old factors. A masked factor value of 1 is
+    // an already removed candidate whose factor is not available locally.
+    std::vector<std::uint8_t> historical_removed;
 };
+
+inline bool is_historical_removed(const State& s,std::size_t index) {
+    return s.historical_removed.size()==s.factors.size() && index<s.factors.size() &&
+        s.historical_removed[index]==1 && s.factors[index]==1;
+}
 
 inline void check_n(unsigned n) {
     if (n < 1 || n > 20) throw std::runtime_error("checkpoint n must be in 1..20");
@@ -239,8 +247,19 @@ inline void validate_factor(U64 p, const State& s) {
 inline U64 validate(const State& s) {
     validate_metadata(s);
     if (s.factors.size()!=slot_count(s)) throw std::runtime_error("checkpoint factor vector size mismatch");
+    if (!s.historical_removed.empty() && s.historical_removed.size()!=s.factors.size())
+        throw std::runtime_error("checkpoint historical removal mask size mismatch");
     U64 alive=0;
-    for (const auto p:s.factors) { validate_factor(p,s); if (!p) ++alive; }
+    for (std::size_t i=0;i<s.factors.size();++i) {
+        const auto p=s.factors[i];
+        if (!s.historical_removed.empty()) {
+            if (s.historical_removed[i]>1) throw std::runtime_error("invalid historical removal mask bit");
+            if (s.historical_removed[i] && !p)
+                throw std::runtime_error("historically removed candidate was revived");
+        }
+        if (!is_historical_removed(s,i)) validate_factor(p,s);
+        if (!p) ++alive;
+    }
     return alive;
 }
 inline std::string header(const State& s,U64 alive) {
@@ -458,8 +477,10 @@ inline State read_state(const std::string& path) {
     return s;
 }
 
-inline void write_state_atomic(const std::string& path,const State& s) {
+inline void write_state_atomic(const std::string& path,const State& s,bool allow_replace=true) {
     const U64 alive=detail::validate(s);
+    if (std::find(s.factors.begin(),s.factors.end(),U64(1))!=s.factors.end())
+        throw std::runtime_error("CUDA v3 cannot store unknown historical factors; use compact v4 output");
     detail::AtomicWriter out(path);
     detail::Sha256 hash;
     auto put=[&](const std::string& line) { const auto text=line+"\n";out.append(text);hash.update(text); };
@@ -467,7 +488,7 @@ inline void write_state_atomic(const std::string& path,const State& s) {
     for (U64 i=0;i<s.factors.size();++i) put(detail::record(s,i));
     out.append("#GFNSV_END count="+std::to_string(s.factors.size())+" survivors="+
         std::to_string(alive)+" sha256="+hash.final_hex()+"\n");
-    out.commit();
+    out.commit(allow_replace);
 }
 
 inline void validate_factor_destination(const std::string& path,const State& s,bool allow_existing) {
@@ -493,7 +514,7 @@ inline void write_factors_atomic(const std::string& path,const State& s,bool all
     auto put=[&](const std::string& line) { const auto text=line+"\n";out.append(text);hash.update(text); };
     put(expected);
     U64 count=0;
-    for (U64 i=0;i<s.factors.size();++i) if (s.factors[static_cast<std::size_t>(i)]) {
+    for (U64 i=0;i<s.factors.size();++i) if (s.factors[static_cast<std::size_t>(i)]>1) {
         put(std::to_string(s.factors[static_cast<std::size_t>(i)])+" | "+
             std::to_string(first_even(s)+2*i)+"^"+std::to_string(U64(1)<<s.n)+"+1");
         ++count;
