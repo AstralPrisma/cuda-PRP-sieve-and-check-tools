@@ -14,6 +14,8 @@
 *.ptx
 *.cubin
 *.fatbin
+__pycache__/
+*.py[cod]
 
 # Runtime state and large search data.
 **/net_work/

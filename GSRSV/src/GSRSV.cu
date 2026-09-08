@@ -63,7 +63,7 @@ constexpr uint64_t PMAX_MAX = (UINT64_C(1) << 62) - 1;
 constexpr uint32_t BMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint32_t NMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint64_t SIGN_BIT = UINT64_C(1) << 63;
-constexpr const char* APP_VERSION = "2.0";
+constexpr const char* APP_VERSION = "2.1";
 enum class TermType : int { Unknown = 0, BN = 1, Primorial = 2, Factorial = 3 };
 enum class FileFormat : int { Unknown = 0, ABCD, ABC, NewPGen };
 enum class PrimeMode : int { Auto = 0, PrimeSieve, Segmented, MillerRabin };
@@ -2009,9 +2009,56 @@ __device__ __forceinline__ uint64_t d_inverse_base_large(uint32_t base, uint64_t
     return s * q + tail; // (1+s*p)/base, exact and < p
 }
 
+// Product-only REDC: low(T + m*p) is zero, so its carry is exactly (lo != 0).
+// Keep the old helper for BN and small fallback paths to isolate this change.
+__device__ __forceinline__ uint64_t d_product_mont_mul(uint64_t a, uint64_t b, const Mont64& c) {
+    const uint64_t lo = a * b;
+    const uint64_t hi = __umul64hi(a, b);
+    const uint64_t m = lo * c.ninv;
+    uint64_t u = hi + __umul64hi(m, c.mod) + static_cast<uint64_t>(lo != 0);
+    if (u >= c.mod) u -= c.mod;
+    return u;
+}
+
+// Input/output remain Montgomery encoded. No variable division or conversion.
+__device__ __forceinline__ uint64_t d_pow_mont_encoded(
+    uint64_t x, uint64_t e, const Mont64& c) {
+    uint64_t r = c.rmod;
+    while (e) {
+        if (e & 1ULL) r = d_product_mont_mul(r, x, c);
+        e >>= 1;
+        if (e) x = d_product_mont_mul(x, x, c);
+    }
+    return r;
+}
+
+__device__ __forceinline__ uint64_t d_product_inverse_raw_chunks(
+    uint64_t p, const uint64_t* chunks, uint32_t chunk_count) {
+    const Mont64 c = d_make_mont(p);
+    // R=2^64. c.r2 represents R in Montgomery form, so this gives
+    // R^(chunk_count+1) mod p. Each raw-chunk REDC consumes exactly one R.
+    uint64_t acc = d_pow_mont_encoded(c.r2, chunk_count, c);
+    for (uint32_t i = 0; i < chunk_count; ++i) {
+        // This second operand need not be reduced: acc<p, chunk<R imply
+        // T=acc*chunk<p*R. Thus REDC is <2p and one subtraction is enough.
+        // p<=2^62-1 ensures hi+mhi+carry cannot overflow uint64_t.
+        acc = d_product_mont_mul(acc, chunks[i], c);
+    }
+    // acc = product(chunks) * R mod p, already in the right representation.
+    if (acc == 0) return 0;
+    return d_product_mont_mul(d_pow_mont_encoded(acc, p - 2, c), 1, c);
+}
+
 __device__ __forceinline__ uint64_t d_multiplier_inverse(
     uint64_t p, int term_type, uint32_t base, uint32_t n,
     const uint64_t* chunks, uint32_t chunk_count) {
+
+    // Factorial/primorial product path. Power-form arithmetic below is unchanged.
+    // Keep the original very-small-product uint32 path (including p=2).
+    if (term_type != static_cast<int>(TermType::BN) && p > 2 &&
+        (p > UINT32_MAX || chunk_count >= 32)) {
+        return d_product_inverse_raw_chunks(p, chunks, chunk_count);
+    }
 
     if (p <= UINT32_MAX) {
         uint32_t pp = static_cast<uint32_t>(p);
@@ -3073,7 +3120,7 @@ void display_banner() {
     printf("%s\n","      `Y8bood8P'   Y8P 8''88888P'  Y8P o888o  o888o Y8P 8''88888P'  Y8P      `8'    Y8P     ");
     printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                            Generalized-Sierpinski/Riesel-Siever                            ");
-    printf("%s\n","                            Version 2.0 CUDA by A.P. August 2026                            ");
+    printf("%s\n","                             Version 2.1 CUDA by A.P. Sept 2026                             ");
 }
 
 #include "console_utf8.hpp"

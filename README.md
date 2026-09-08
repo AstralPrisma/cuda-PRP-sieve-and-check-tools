@@ -4,10 +4,11 @@ This repository collects six CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
-The [v2026.09.7 release](docs/releases/v2026.09.7.md) updates GFNSV to 1.1 with
-self-contained single-file recovery, optional factor logs, efficiency stopping,
-and offline candidate-task conversion. The other five tools retain their
-component versions and byte-identical v2026.09.6 executables.
+The [v2026.09.8 release](docs/releases/v2026.09.8.md) updates GSRSV to 2.1 with
+faster factorial/primorial modular products. On the tested RTX 4060 workload,
+complete fixed-range runs are about 3.3–3.5x faster with unchanged survivors.
+The other five tools retain their component versions and byte-identical
+v2026.09.7 executables; the release archives include refreshed provenance.
 
 > [!IMPORTANT]
 > A probable-prime (PRP) result is not a deterministic primality proof. Treat a
@@ -23,7 +24,7 @@ component versions and byte-identical v2026.09.6 executables.
 | [`GSRPS/`](GSRPS/) | 2.3 | Checks generalized Sierpinski/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
 | [`GFPPS/`](GFPPS/) | 1.0 | Checks generalized factorial/primorial candidates `k*n!+/-1` and `k*n#+/-1`. |
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
-| [`GSRSV/`](GSRSV/) | 2.0 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
+| [`GSRSV/`](GSRSV/) | 2.1 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
 | [`GNCWSV/`](GNCWSV/) | 1.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
 
 ## 中文简介

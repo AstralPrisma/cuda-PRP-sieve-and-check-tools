@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.09.8 - GSRSV 2.1 factorial/primorial acceleration
+
+- Replaced repeated packed-chunk remainders and Montgomery conversions with
+  exact pre-seeded raw-chunk multiplication; simplified product-only REDC carry.
+- Tested fixed-range RTX 4060 workloads ran about 3.3–3.5x faster, with identical
+  survivors. The power-form arithmetic and sieve/resume/file interfaces remain
+  unchanged. Prime 2 and small 32-bit products retain their previous path.
+- Added independent integer and direct GPU inverse regression utilities;
+  corrected the primorial example to use a prime endpoint.
+- Rebuilt eight GSRSV binaries for Windows/Linux and four SM targets. Other
+  forty executables are reused from v2026.09.7 with original build provenance.
+- Sieve distribution remains in GitHub; separate PRPNet client ZIPs omit sieves.
+
 ## v2026.09.7 - GFNSV CUDA 1.1 single-file recovery
 
 - GFNSV 1.1 writes self-contained v4 GFN/ABC/base/expression snapshots with

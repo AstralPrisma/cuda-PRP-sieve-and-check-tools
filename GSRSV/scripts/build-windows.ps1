@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 Push-Location $toolDirectory
 try {
     foreach ($arch in $Architectures) {
-        & $nvcc -O3 -std=c++17 "-arch=$arch" --default-stream per-thread `
+        & $nvcc -O3 -std=c++17 --threads 1 "-arch=$arch" --default-stream per-thread `
             -Xcompiler=/utf-8 -Xcompiler=/Zc:preprocessor -Xcompiler=/wd4038 `
             -o (Join-Path $outputPath "GSRSV_$arch.exe") "src\GSRSV.cu"
         if ($LASTEXITCODE -ne 0) { throw "nvcc failed for $arch" }

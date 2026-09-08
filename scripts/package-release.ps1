@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.7",
+    [string]$SuiteVersion = "v2026.09.8",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = ""
@@ -18,7 +18,7 @@ $versions = [ordered]@{
     GSRPS = "2.3"
     GFPPS = "1.0"
     GFNSV = "1.1"
-    GSRSV = "2.0"
+    GSRSV = "2.1"
     GNCWSV = "1.0"
 }
 $utf8 = New-Object Text.UTF8Encoding($false)
@@ -225,7 +225,7 @@ try {
                 $stageWsl = (& wsl.exe -e wslpath -a $platformStage).Trim()
                 $archiveWsl = (& wsl.exe -e wslpath -a $archivePath).Trim()
                 Invoke-External {
-                    & wsl.exe -e env XZ_OPT=-T1 tar --sort=name "--mtime=@$sourceEpoch" --owner=0 --group=0 --numeric-owner `
+                    & wsl.exe --cd / --exec env 'XZ_OPT=-T1 --memlimit-compress=128MiB' tar --sort=name "--mtime=@$sourceEpoch" --owner=0 --group=0 --numeric-owner `
                         "--mode=u+rwX,go+rX,go-w" -cJf $archiveWsl -C $stageWsl $rootName
                 } "Linux tar.xz packaging"
             }
@@ -258,7 +258,7 @@ try {
     Invoke-External { & git archive --format=tar "--prefix=$sourceBase/" -o $sourceTar HEAD } "Source archive"
     $sourceTarWsl = (& wsl.exe -e wslpath -a $sourceTar).Trim()
     # Keep compression workspace bounded on a host also running prime searches.
-    Invoke-External { & wsl.exe -e xz -T1 -f -6 $sourceTarWsl } "Source archive compression"
+    Invoke-External { & wsl.exe --cd / --exec xz -T1 --memlimit-compress=128MiB -f -6 $sourceTarWsl } "Source archive compression"
 
     $manifest = [ordered]@{
         suite_version = $SuiteVersion

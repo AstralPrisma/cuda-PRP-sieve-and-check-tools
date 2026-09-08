@@ -26,7 +26,7 @@ mkdir -p "${out_dir}"
 out_dir="$(cd -- "${out_dir}" && pwd)"
 cd "${tool_dir}"
 for arch in "${architectures[@]}"; do
-  "${nvcc_bin}" -O3 -std=c++17 -arch="${arch}" \
+  "${nvcc_bin}" -O3 -std=c++17 --threads 1 -arch="${arch}" \
     -Xcompiler=-pthread -ldl \
     -o "${out_dir}/GSRSV_${arch}" src/GSRSV.cu
 done

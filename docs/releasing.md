@@ -14,18 +14,23 @@ The six tools have independent component versions:
 | GSRPS | 2.3 |
 | GFPPS | 1.0 |
 | GFNSV | 1.1 |
-| GSRSV | 2.0 |
+| GSRSV | 2.1 |
 | GNCWSV | 1.0 |
 
-Use a suite tag such as `v2026.09.7` for a coordinated repository release and
+Use a suite tag such as `v2026.09.8` for a coordinated repository release and
 list all six component versions in its notes. Increment the final field for a
 rebuild or packaging correction that does not change every component.
 
-For v2026.09.7, only GFNSV changes: its eight platform/SM binaries use the
-verified 1.1 build. The other 40 binaries are reused from v2026.09.6, with
+For v2026.09.8, only GSRSV changes: its eight platform/SM binaries use the
+verified 2.1 build. The other 40 binaries are reused from v2026.09.7, with
 byte-identical artifacts and unchanged component source/header hashes.
 Retain their actual original compiler and runtime-test evidence and record
 `reused_from` in build metadata; do not describe the suite as 48 new builds.
+
+Separate distribution policy: PRPNet website client ZIPs contain the checkers
+and networking/control scripts, not bundled sieve programs or sieve sources.
+Sieve programs remain available through this repository's GitHub Releases.
+Do not apply the website exclusion to this full six-tool GitHub release.
 
 ## Pre-release checklist
 
@@ -129,7 +134,7 @@ The Release should also contain:
 ```text
 SHA256SUMS
 manifest.json
-cuda-prp-sieve-and-check-tools-v2026.09.7-source.tar.xz
+cuda-prp-sieve-and-check-tools-v2026.09.8-source.tar.xz
 ```
 
 GitHub's generated source archives point to the tag, but an explicit source
@@ -249,7 +254,7 @@ Then create the twelve component/platform archives, source archive, manifest,
 and checksums (15 assets total) with:
 
 ```powershell
-scripts\package-release.ps1 -SuiteVersion v2026.09.7
+scripts\package-release.ps1 -SuiteVersion v2026.09.8
 ```
 
 ## Publishing with GitHub CLI
@@ -259,8 +264,8 @@ release with a command shaped like:
 
 ```bash
 gh auth status
-gh release create v2026.09.7 \
-  --title 'CUDA PRP: sieve and check tools 2026.09.7' \
+gh release create v2026.09.8 \
+  --title 'CUDA PRP: sieve and check tools 2026.09.8' \
   --notes-file release-notes.md \
   release-assets/*
 ```

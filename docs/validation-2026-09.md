@@ -1,7 +1,7 @@
 # September 2026 local validation
 
 This record covers the GFPS 4.1/4.4 and GSRPS 2.3 arithmetic promotions,
-GFPPS 1.0, and the GFNSV CUDA 1.0/1.1 sieve. It describes tested cases, not a guarantee that every
+GFPPS 1.0, the GFNSV CUDA 1.0/1.1 sieve, and GSRSV 2.1. It describes tested cases, not a guarantee that every
 parameter, device, or hardware execution is free of defects.
 
 ## Hardware and build coverage
@@ -11,6 +11,18 @@ Windows x64 and Linux/WSL x86-64 builds use CUDA 13.3, with MSVC and GCC host
 compilers respectively. `sm_86`, `sm_100`, and `sm_120` binaries were
 cross-compiled and their cubin targets checked; they were not executed on
 matching hardware.
+
+## GSRSV 2.1 factorial/primorial optimization (v2026.09.8)
+
+The packed-product kernel avoids repeated chunk remainders and Montgomery-domain
+conversion, using a proved pre-seed scaling invariant and exact low-word carry.
+Full conditions, independent oracle/inverse tests, Windows/Linux comparisons,
+and interruption/old-version continuation results are documented in
+[GSRSV validation](../GSRSV/VALIDATION_v2.1.md).
+
+Only the eight GSRSV binaries are rebuilt for this suite release. The other
+forty executable files are reused from v2026.09.7 after checking source/header
+and binary hashes; their historical compiler/runtime evidence is retained.
 
 ## GFNSV CUDA 1.1 single-file v4 (v2026.09.7)
 

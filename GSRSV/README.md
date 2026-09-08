@@ -12,7 +12,7 @@ k*n!  - 1        k*n!  + 1
 the `-1` and `+1` terms for a given `k` are treated as one pair. Use
 `--independent` when the two signs must be retained and sieved separately.
 
-The current source version is 2.0. The implementation is a single-translation-
+The current source version is 2.1. The implementation is a single-translation-
 unit CUDA port/reimplementation of the `twinsieve` application from mtsieve.
 
 > 中文：GSRSV 用 GPU 筛选 `k*b^n±1`、`k*n#±1` 和 `k*n!±1`。默认按双子候选处理；加 `-s` 可分别筛选正负两侧。
@@ -99,9 +99,32 @@ Primorial and factorial runs use `--termtype 2` and `--termtype 3`
 respectively. `--base` is not used for these two modes:
 
 ```bash
-./GSRSV -k 1 -K 10000 -n 1000 -t 2 -P 1000000000 -o p1000.pfgw
+./GSRSV -k 1 -K 10000 -n 997 -t 2 -P 1000000000 -o p997.pfgw
 ./GSRSV -k 1 -K 10000 -n 1000 -t 3 -P 1000000000 -o f1000.pfgw
 ```
+
+For GSRSV's primorial mode, `n` itself must be prime (for example 997).
+This differs from GFPPS, which permits a composite endpoint in its `n#` expression.
+
+## Version 2.1 product-path optimization
+
+Factorial and primorial sieving now avoid a remainder and a Montgomery-domain
+conversion for each packed product chunk. With `R=2^64` and `C` chunks, a short
+pre-seed exponentiation starts the accumulator at `R^(C+1) mod p`; multiplying
+the unreduced chunks consumes one R per chunk and leaves the product encoded as
+`B*R mod p`. Fermat inversion then stays in Montgomery form until its final decode.
+The product-only REDC helper also replaces low-word cancellation arithmetic with
+the exact carry condition `lo != 0`. No floating-point approximation is used.
+
+The proof requires odd `p<=2^62-1`, reduced accumulators and chunks below `2^64`,
+all maintained by the existing sieve. Prime 2 and small 32-bit products retain
+the old path; the `b^n` arithmetic is unchanged. Candidate/factor formats,
+Ctrl+C handling, resume behavior and efficiency stop options are unchanged.
+
+On one RTX 4060 Laptop GPU, fixed-range two-stream tests of `25206!` and
+`230563#` reduced complete process time by approximately 71.5% and 69.6%
+(3.50x and 3.29x throughput). These are measured examples, not a guarantee for
+every n, GPU or prime generator. See [validation](VALIDATION_v2.1.md).
 
 Prime bounds use the interval
 
