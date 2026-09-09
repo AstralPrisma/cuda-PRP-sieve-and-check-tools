@@ -17,15 +17,24 @@ The six tools have independent component versions:
 | GSRSV | 2.1 |
 | GNCWSV | 1.0 |
 
-Use a suite tag such as `v2026.09.8` for a coordinated repository release and
+Use a suite tag such as `v2026.09.9` for a coordinated repository release and
 list all six component versions in its notes. Increment the final field for a
 rebuild or packaging correction that does not change every component.
 
-For v2026.09.8, only GSRSV changes: its eight platform/SM binaries use the
-verified 2.1 build. The other 40 binaries are reused from v2026.09.7, with
+For v2026.09.9, only GFPPS changes: its eight platform/SM binaries use the
+optimized 1.0 build. The other 40 binaries are reused from v2026.09.8, with
 byte-identical artifacts and unchanged component source/header hashes.
 Retain their actual original compiler and runtime-test evidence and record
 `reused_from` in build metadata; do not describe the suite as 48 new builds.
+
+GFPPS's Linux binaries use a pinned Ubuntu 22.04-compatible host environment
+and static C++/GCC/CUDA runtimes. glibc is not statically linked. Inspect the
+actual dynamic dependencies and maximum required GLIBC symbol version rather
+than assuming that static C++ libraries remove the Linux ABI floor. This
+change does not alter the compatibility of the other reused Linux binaries.
+For optimization-path tests, Windows `sm_89` and Linux `sm_120` have matching
+hardware evidence; every final artifact still needs its own explicit runtime
+status. Record cross-compilation as such, even for the other OS of a tested SM.
 
 Separate distribution policy: PRPNet website client ZIPs contain the checkers
 and networking/control scripts, not bundled sieve programs or sieve sources.
@@ -134,7 +143,7 @@ The Release should also contain:
 ```text
 SHA256SUMS
 manifest.json
-cuda-prp-sieve-and-check-tools-v2026.09.8-source.tar.xz
+cuda-prp-sieve-and-check-tools-v2026.09.9-source.tar.xz
 ```
 
 GitHub's generated source archives point to the tag, but an explicit source
@@ -254,7 +263,7 @@ Then create the twelve component/platform archives, source archive, manifest,
 and checksums (15 assets total) with:
 
 ```powershell
-scripts\package-release.ps1 -SuiteVersion v2026.09.8
+scripts\package-release.ps1 -SuiteVersion v2026.09.9
 ```
 
 ## Publishing with GitHub CLI
@@ -264,8 +273,8 @@ release with a command shaped like:
 
 ```bash
 gh auth status
-gh release create v2026.09.8 \
-  --title 'CUDA PRP: sieve and check tools 2026.09.8' \
+gh release create v2026.09.9 \
+  --title 'CUDA PRP: sieve and check tools 2026.09.9' \
   --notes-file release-notes.md \
   release-assets/*
 ```

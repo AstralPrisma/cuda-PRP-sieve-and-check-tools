@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.8",
+    [string]$SuiteVersion = "v2026.09.9",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = ""
@@ -215,6 +215,12 @@ try {
                 $buildInfo += "Reused binary provenance: $($buildRecord.reused_from | ConvertTo-Json -Depth 8 -Compress)"
                 $buildInfo += "Binaries were reused byte-for-byte after source/header and binary hash verification; recorded runtime evidence is retained from the earlier build."
             }
+            if ($buildRecord.runtime_dependencies) {
+                $buildInfo += "Runtime dependencies: $($buildRecord.runtime_dependencies -join '; ')"
+            }
+            if ($buildRecord.dependency_evidence) {
+                $buildInfo += "Dependency inspection: $($buildRecord.dependency_evidence)"
+            }
             [IO.File]::WriteAllLines((Join-Path $componentStage "BUILDINFO.txt"), $buildInfo, $utf8)
 
             $archiveName = "$($tool.ToLowerInvariant())-$version-$hostPlatform-cuda13.3$archiveExtension"
@@ -249,6 +255,8 @@ try {
                 binaries = $binaryRecords
             }
             if ($buildRecord.reused_from) { $packageRecord.reused_from = $buildRecord.reused_from }
+            if ($buildRecord.runtime_dependencies) { $packageRecord.runtime_dependencies = @($buildRecord.runtime_dependencies) }
+            if ($buildRecord.dependency_evidence) { $packageRecord.dependency_evidence = $buildRecord.dependency_evidence }
             $packageRecords += $packageRecord
         }
     }

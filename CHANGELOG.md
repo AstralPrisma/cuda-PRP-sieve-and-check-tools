@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.09.9 - GFPPS 1.0 parallel NTT and exact carry optimization
+
+- Split both shared and global NTT work across the two prime planes; use
+  1024-point shared tiles with 128 threads and default NTT block cap 256.
+- Fuse three exact carry relaxation passes with carry-map generation, retaining
+  the full CUB scan and arithmetic error checks. No bounded/truncated carry
+  shortcut or unbounded carry-backtracking experiment is enabled.
+- Recorded complete `2*25206!+1` checks improve throughput by 64.2% on RTX
+  5090/Linux and 21.5% on RTX 4060 Laptop/Windows. Million-digit measurements
+  cover prefixes only, not full completed checks.
+- Keep GFPPS component version 1.0, CLI/result semantics, and `GFPPS001`
+  checkpoint compatibility. Old/new residues, checkpoints, independent integer
+  checks, known PRPs, and resume/error rejection cases were compared.
+- Rebuild only GFPPS's eight target/platform binaries. Linux GFPPS uses an
+  Ubuntu 22.04-compatible build with static C++/GCC/CUDA runtimes; glibc and
+  the GPU driver remain external dependencies. See artifact build metadata.
+- Reuse the other 40 binaries from v2026.09.8 with their original provenance.
+  GFPS's experimental 5090 optimization is not included in this promotion.
+
 ## v2026.09.8 - GSRSV 2.1 factorial/primorial acceleration
 
 - Replaced repeated packed-chunk remainders and Montgomery conversions with

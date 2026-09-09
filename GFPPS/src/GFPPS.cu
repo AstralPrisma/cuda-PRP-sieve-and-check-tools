@@ -22,6 +22,12 @@
 #include <numeric>
 #include <regex>
 #include <sstream>
+#ifndef GFPPS_FUSED_RELAX
+#define GFPPS_FUSED_RELAX 1
+#endif
+#if GFPPS_FUSED_RELAX != 0 && GFPPS_FUSED_RELAX != 1
+#error GFPPS_FUSED_RELAX must be 0 or 1
+#endif
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -90,6 +96,28 @@ __global__ void carry_maps(const uint64_t* c,uint32_t* maps,int count,uint32_t* 
         if(c[i]>=2*uint64_t(BASE)) atomicOr(error,1u);
         maps[i]=uint32_t(c[i]>=BASE)|(uint32_t(c[i]==MASK)<<1);
     }
+}
+__global__ void relax3_carry_maps(const uint64_t* in,uint64_t* out,
+                                 uint32_t* maps,int count,uint32_t* error) {
+    int i=blockIdx.x*blockDim.x+threadIdx.x;
+    if(i>=count) return;
+    // Evaluate exactly three synchronous relaxations from the original
+    // coefficients. Negative indices are zero, as at every baseline boundary.
+    // These four reads replace three separate array passes; no carry is
+    // truncated here. The arbitrary-length final carry still uses CUB scan.
+    const uint64_t x0=in[i];
+    const uint64_t x1=i>=1?in[i-1]:0;
+    const uint64_t x2=i>=2?in[i-2]:0;
+    const uint64_t x3=i>=3?in[i-3]:0;
+    const uint64_t y0=(x0&MASK)+(x1>>BITS);
+    const uint64_t y1=(x1&MASK)+(x2>>BITS);
+    const uint64_t y2=(x2&MASK)+(x3>>BITS);
+    const uint64_t z0=(y0&MASK)+(y1>>BITS);
+    const uint64_t z1=(y1&MASK)+(y2>>BITS);
+    const uint64_t value=(z0&MASK)+(z1>>BITS);
+    out[i]=value;
+    if(value>=2*uint64_t(BASE)) atomicOr(error,1u);
+    maps[i]=uint32_t(value>=BASE)|(uint32_t(value==MASK)<<1);
 }
 __global__ void finish_carry(const uint64_t* c,const uint32_t* prefix,uint32_t* out,
                             int count,bool allow_discard,uint32_t* error) {
@@ -172,10 +200,14 @@ class Montgomery {
     void normalize(uint32_t* out,int count,bool discard=false) {
         // M0<2^58 and B=2^15 imply M3<2B; finish the arbitrary-length
         // carry chain with a prefix scan, not a finite dependency halo.
+#if GFPPS_FUSED_RELAX
+        relax3_carry_maps<<<blocks(count),256,0,stream_>>>(ca_.p,cb_.p,maps_.p,count,error_.p);
+#else
         relax<<<blocks(count),256,0,stream_>>>(ca_.p,cb_.p,count);
         relax<<<blocks(count),256,0,stream_>>>(cb_.p,ca_.p,count);
         relax<<<blocks(count),256,0,stream_>>>(ca_.p,cb_.p,count);
         carry_maps<<<blocks(count),256,0,stream_>>>(cb_.p,maps_.p,count,error_.p);
+#endif
         scan(count);
         finish_carry<<<blocks(count),256,0,stream_>>>(cb_.p,prefix_.p,out,count,discard,error_.p);
     }
@@ -264,7 +296,11 @@ public:
             }
         } catch(...) { destroy_graphs(); if(stream_) cudaStreamDestroy(stream_); stream_=nullptr; throw; }
         std::cout<<"montgomery: radix_bits="<<BITS<<", limbs="<<m_<<", ntt_length="<<len_
-                 <<", ntt_primes=2, products_per_bit=3, graphs="<<(use_graphs?"yes":"no")<<"\n";
+                 <<", ntt_primes=2, products_per_bit=3, graphs="<<(use_graphs?"yes":"no")
+                 <<", ntt_blocks="<<block_cap<<", shared_tile="<<gfpps_ntt::kSharedNttTile
+                 <<", shared_threads="<<gfpps_ntt::kSharedNttThreads
+                 <<", split_shared="<<GFPPS_SPLIT_SHARED_PRIMES<<", split_global="<<GFPPS_SPLIT_GLOBAL_PRIMES
+                 <<", carry_normalize="<<(GFPPS_FUSED_RELAX?"fused3+scan":"baseline3+scan")<<"\n";
     }
     ~Montgomery() { destroy_graphs(); if(stream_) cudaStreamDestroy(stream_); }
     int size() const { return m_; }
@@ -428,7 +464,9 @@ void display_banner() {
 
 int run(int argc,char** argv) {
     std::string expression,checkpoint; uint32_t witness=2; uint64_t max_bits=0,every=100000,progress=100000;
-    bool resume=false,verify=false,graphs=true,print_residue=false,help=false,interval_given=false; int blocks=96;
+    bool resume=false,verify=false,graphs=true,print_residue=false,help=false,interval_given=false;
+    // Validated parallel NTT profile; the CLI can still override this limit.
+    int blocks=256;
     for(int i=1;i<argc;++i) {
         std::string arg=argv[i];
         auto next=[&]()->std::string { if(++i>=argc) throw std::runtime_error("missing value for "+arg); return argv[i]; };

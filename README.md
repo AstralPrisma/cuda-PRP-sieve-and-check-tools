@@ -4,11 +4,13 @@ This repository collects six CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
-The [v2026.09.8 release](docs/releases/v2026.09.8.md) updates GSRSV to 2.1 with
-faster factorial/primorial modular products. On the tested RTX 4060 workload,
-complete fixed-range runs are about 3.3–3.5x faster with unchanged survivors.
-The other five tools retain their component versions and byte-identical
-v2026.09.7 executables; the release archives include refreshed provenance.
+The [v2026.09.9 release](docs/releases/v2026.09.9.md) promotes GFPPS's parallel
+NTT and exact fused-carry path while retaining component version 1.0. For the
+complete 100,001-digit `2*25206!+1` check, controlled before/after measurements
+showed 1.64x throughput on RTX 5090/Linux and 1.22x on RTX 4060 Laptop/Windows.
+These are within-platform comparisons, not cross-platform speed claims.
+The other five tools retain their versions and byte-identical v2026.09.8
+executables; GFPS's separate experimental optimization is not promoted.
 
 > [!IMPORTANT]
 > A probable-prime (PRP) result is not a deterministic primality proof. Treat a
@@ -55,9 +57,12 @@ batches. GSRPS 2.3 uses condition-checked weighted scans and compact carry
 reduction, retaining the exact fallback where required. GFNSV 1.1 provides GPU
 sieving with portable single-file recovery, progress/ETA, and optional
 efficiency limits; the older CPU GFNSV is not bundled.
-GFPPS 1.0 adds general integer Montgomery arithmetic and portable checkpoints
-for factorial and primorial PRP checks. Its `n#` means the product of primes
-not exceeding `n`; arithmetic checkpoints require an explicit `--checkpoint FILE`.
+GFPPS 1.0 provides general integer Montgomery arithmetic and portable checkpoints
+for factorial and primorial PRP checks. Its optimized path splits the two NTT
+prime planes and fuses exact carry preprocessing while retaining the complete
+carry scan. Its `n#` means the product of primes not exceeding `n`; arithmetic
+checkpoints still require an explicit `--checkpoint FILE`. Existing `GFPPS001`
+checkpoints remain compatible. See [optimization validation](GFPPS/VALIDATION_optimized_20260909.md).
 The component READMEs describe the controls and resume interfaces. Recorded
 timings and the limits of validation are in
 [September 2026 validation](docs/validation-2026-09.md).
@@ -81,6 +86,11 @@ PTX for that same target; these packages do not use one universal executable
 for all GPU generations. Architectures that have only been cross-compiled are
 marked as such in the Release notes; only `sm_89` was runtime-tested for the
 initial public release.
+
+The GFPPS optimization additionally has RTX 5090/Linux (`sm_120`) runtime
+evidence, alongside RTX 4060 Laptop/Windows (`sm_89`). This does not extend
+runtime coverage to every component, target, or operating-system combination;
+consult each artifact's `BUILDINFO.txt` and the release validation notes.
 
 The table describes the build targets for this source tree. Check the version
 and validation notes of a downloaded Release: published binaries can be older

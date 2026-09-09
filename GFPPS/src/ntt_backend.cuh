@@ -8,8 +8,27 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// Independent launch-layout switches. Defaults enable the validated split-prime
+// layout; the original two-prime kernels remain selectable for comparisons.
+#ifndef GFPPS_SPLIT_SHARED_PRIMES
+#define GFPPS_SPLIT_SHARED_PRIMES 1
+#endif
+#ifndef GFPPS_SPLIT_GLOBAL_PRIMES
+#define GFPPS_SPLIT_GLOBAL_PRIMES 1
+#endif
 namespace gfpps_ntt {
 inline int block_cap = 96;
+inline dim3 global_prime_grid(int per_prime_blocks) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    return dim3(per_prime_blocks, 2);
+#else
+    return dim3(1, per_prime_blocks);
+#endif
+}
+inline dim3 shared_prime_grid(int per_prime_blocks) {
+    return dim3(per_prime_blocks, GFPPS_SPLIT_SHARED_PRIMES ? 2 : 1);
+}
 inline int ntt_block_limit() { return block_cap; }
 inline int limited_ntt_grid_y(int items, int threads) {
     return std::max(1, std::min(block_cap, (items + threads - 1) / threads));
@@ -35,10 +54,9 @@ __device__ __forceinline__ uint32_t mul_mod_mont_2prime(uint32_t a, uint32_t b, 
     const uint32_t lo = a * b;
     const uint32_t hi = __umulhi(a, b);
     const uint32_t m = lo * nprime;
-    const uint32_t mp_lo = m * p;
     const uint32_t mp_hi = __umulhi(m, p);
-    const uint32_t sum_lo = lo + mp_lo;
-    uint32_t u = hi + mp_hi + static_cast<uint32_t>(sum_lo < lo);
+    // Exact Montgomery low-word cancellation; p < 2^30.
+    uint32_t u = hi + mp_hi + static_cast<uint32_t>(lo != 0);
     if (u >= p) u -= p;
     return u;
 }
@@ -328,6 +346,27 @@ __global__ void ntt_stage2_2_mont_kernel(uint32_t* r0, uint32_t* r1,
                                          const uint32_t* roots10, const uint32_t* roots11,
                                          const uint32_t* roots20, const uint32_t* roots21,
                                          int len, int groups) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage2_apply_mont(r0, roots10, roots20, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage2_apply_mont(r1, roots11, roots21, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -336,12 +375,52 @@ __global__ void ntt_stage2_2_mont_kernel(uint32_t* r0, uint32_t* r1,
         ntt_stage2_apply_mont(r0, roots10, roots20, len, idx, p0);
         ntt_stage2_apply_mont(r1, roots11, roots21, len, idx, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage2_2_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
                                                 const uint32_t* roots_small0, const uint32_t* roots_small1,
                                                 const uint32_t* roots_big0, const uint32_t* roots_big1,
                                                 int len, int groups, uint32_t inv0, uint32_t inv1) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage2_apply_mont(r0, roots_small0, roots_big0, len, idx, p0);
+            const int quarter = len >> 2;
+            const int block = idx / quarter;
+            const int j = idx - block * quarter;
+            const int pos = block * len + j;
+    #pragma unroll
+            for (int t = 0; t < 4; ++t) {
+                const int out = pos + t * quarter;
+                r0[out] = mul_mod_mont_2prime(r0[out], inv0, p0);
+            }
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage2_apply_mont(r1, roots_small1, roots_big1, len, idx, p1);
+            const int quarter = len >> 2;
+            const int block = idx / quarter;
+            const int j = idx - block * quarter;
+            const int pos = block * len + j;
+    #pragma unroll
+            for (int t = 0; t < 4; ++t) {
+                const int out = pos + t * quarter;
+                r1[out] = mul_mod_mont_2prime(r1[out], inv1, p1);
+            }
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -360,11 +439,33 @@ __global__ void ntt_stage2_2_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
             r1[out] = mul_mod_mont_2prime(r1[out], inv1, p1);
         }
     }
+#endif
 }
 
 __global__ void ntt_stage_2_mont_kernel(uint32_t* r0, uint32_t* r1,
                                         const uint32_t* roots0, const uint32_t* roots1,
                                         int len, int butterflies) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < butterflies; idx += total) {
+            ntt_stage_one_apply_mont(r0, roots0, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < butterflies; idx += total) {
+            ntt_stage_one_apply_mont(r1, roots1, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -373,11 +474,45 @@ __global__ void ntt_stage_2_mont_kernel(uint32_t* r0, uint32_t* r1,
         ntt_stage_one_apply_mont(r0, roots0, len, idx, p0);
         ntt_stage_one_apply_mont(r1, roots1, len, idx, p1);
     }
+#endif
 }
 __global__ void ntt_stage_2_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
                                                const uint32_t* roots0, const uint32_t* roots1,
                                                int len, int butterflies,
                                                uint32_t inv0, uint32_t inv1) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < butterflies; idx += total) {
+            ntt_stage_one_apply_mont(r0, roots0, len, idx, p0);
+            const int half = len >> 1;
+            const int block = idx / half;
+            const int j = idx - block * half;
+            const int pos = block * len + j;
+            r0[pos] = mul_mod_mont_2prime(r0[pos], inv0, p0);
+            r0[pos + half] = mul_mod_mont_2prime(r0[pos + half], inv0, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < butterflies; idx += total) {
+            ntt_stage_one_apply_mont(r1, roots1, len, idx, p1);
+            const int half = len >> 1;
+            const int block = idx / half;
+            const int j = idx - block * half;
+            const int pos = block * len + j;
+            r1[pos] = mul_mod_mont_2prime(r1[pos], inv1, p1);
+            r1[pos + half] = mul_mod_mont_2prime(r1[pos + half], inv1, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -394,11 +529,33 @@ __global__ void ntt_stage_2_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
         r1[pos] = mul_mod_mont_2prime(r1[pos], inv1, p1);
         r1[pos + half] = mul_mod_mont_2prime(r1[pos + half], inv1, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
                                             const uint32_t* roots0, const uint32_t* roots1,
                                             int len, int butterflies) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < butterflies; idx += total) {
+            ntt_stage_one_dif_apply_mont(r0, roots0, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < butterflies; idx += total) {
+            ntt_stage_one_dif_apply_mont(r1, roots1, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -407,12 +564,34 @@ __global__ void ntt_stage_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
         ntt_stage_one_dif_apply_mont(r0, roots0, len, idx, p0);
         ntt_stage_one_dif_apply_mont(r1, roots1, len, idx, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage2_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
                                              const uint32_t* roots_big0, const uint32_t* roots_big1,
                                              const uint32_t* roots_small0, const uint32_t* roots_small1,
                                              int len, int groups) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage2_dif_apply_mont(r0, roots_big0, roots_small0, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage2_dif_apply_mont(r1, roots_big1, roots_small1, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -421,6 +600,7 @@ __global__ void ntt_stage2_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
         ntt_stage2_dif_apply_mont(r0, roots_big0, roots_small0, len, idx, p0);
         ntt_stage2_dif_apply_mont(r1, roots_big1, roots_small1, len, idx, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage3_2_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
@@ -428,6 +608,27 @@ __global__ void ntt_stage3_2_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
                                              const uint32_t* roots_mid0, const uint32_t* roots_mid1,
                                              const uint32_t* roots_big0, const uint32_t* roots_big1,
                                              int len, int groups) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage3_dit_apply_mont(r0, roots_small0, roots_mid0, roots_big0, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage3_dit_apply_mont(r1, roots_small1, roots_mid1, roots_big1, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -436,6 +637,7 @@ __global__ void ntt_stage3_2_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
         ntt_stage3_dit_apply_mont(r0, roots_small0, roots_mid0, roots_big0, len, idx, p0);
         ntt_stage3_dit_apply_mont(r1, roots_small1, roots_mid1, roots_big1, len, idx, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage3_2_dit_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
@@ -444,6 +646,45 @@ __global__ void ntt_stage3_2_dit_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
                                                     const uint32_t* roots_big0, const uint32_t* roots_big1,
                                                     int len, int groups,
                                                     uint32_t inv0, uint32_t inv1) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage3_dit_apply_mont(r0, roots_small0, roots_mid0, roots_big0, len, idx, p0);
+            const int octant = len >> 3;
+            const int block = idx / octant;
+            const int j = idx - block * octant;
+            const int pos = block * len + j;
+    #pragma unroll
+            for (int t = 0; t < 8; ++t) {
+                const int out = pos + t * octant;
+                r0[out] = mul_mod_mont_2prime(r0[out], inv0, p0);
+            }
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage3_dit_apply_mont(r1, roots_small1, roots_mid1, roots_big1, len, idx, p1);
+            const int octant = len >> 3;
+            const int block = idx / octant;
+            const int j = idx - block * octant;
+            const int pos = block * len + j;
+    #pragma unroll
+            for (int t = 0; t < 8; ++t) {
+                const int out = pos + t * octant;
+                r1[out] = mul_mod_mont_2prime(r1[out], inv1, p1);
+            }
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -462,6 +703,7 @@ __global__ void ntt_stage3_2_dit_mont_scaled_kernel(uint32_t* r0, uint32_t* r1,
             r1[out] = mul_mod_mont_2prime(r1[out], inv1, p1);
         }
     }
+#endif
 }
 
 __global__ void ntt_stage3_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
@@ -469,6 +711,27 @@ __global__ void ntt_stage3_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
                                              const uint32_t* roots_mid0, const uint32_t* roots_mid1,
                                              const uint32_t* roots_small0, const uint32_t* roots_small1,
                                              int len, int groups) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage3_dif_apply_mont(r0, roots_big0, roots_mid0, roots_small0, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage3_dif_apply_mont(r1, roots_big1, roots_mid1, roots_small1, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -477,6 +740,7 @@ __global__ void ntt_stage3_2_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
         ntt_stage3_dif_apply_mont(r0, roots_big0, roots_mid0, roots_small0, len, idx, p0);
         ntt_stage3_dif_apply_mont(r1, roots_big1, roots_mid1, roots_small1, len, idx, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage4_2_dit_mont_kernel(
@@ -486,6 +750,27 @@ __global__ void ntt_stage4_2_dit_mont_kernel(
     const uint32_t* roots20, const uint32_t* roots21,
     const uint32_t* roots30, const uint32_t* roots31,
     int len, int groups) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage4_dit_apply_mont(r0, roots00, roots10, roots20, roots30, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage4_dit_apply_mont(r1, roots01, roots11, roots21, roots31, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -494,6 +779,7 @@ __global__ void ntt_stage4_2_dit_mont_kernel(
         ntt_stage4_dit_apply_mont(r0, roots00, roots10, roots20, roots30, len, idx, p0);
         ntt_stage4_dit_apply_mont(r1, roots01, roots11, roots21, roots31, len, idx, p1);
     }
+#endif
 }
 
 __global__ void ntt_stage4_2_dit_mont_scaled_kernel(
@@ -503,6 +789,45 @@ __global__ void ntt_stage4_2_dit_mont_scaled_kernel(
     const uint32_t* roots20, const uint32_t* roots21,
     const uint32_t* roots30, const uint32_t* roots31,
     int len, int groups, uint32_t inv0, uint32_t inv1) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage4_dit_apply_mont(r0, roots00, roots10, roots20, roots30, len, idx, p0);
+            const int unit = len >> 4;
+            const int block = idx / unit;
+            const int j = idx - block * unit;
+            const int pos = block * len + j;
+    #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                const int out = pos + t * unit;
+                r0[out] = mul_mod_mont_2prime(r0[out], inv0, p0);
+            }
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage4_dit_apply_mont(r1, roots01, roots11, roots21, roots31, len, idx, p1);
+            const int unit = len >> 4;
+            const int block = idx / unit;
+            const int j = idx - block * unit;
+            const int pos = block * len + j;
+    #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                const int out = pos + t * unit;
+                r1[out] = mul_mod_mont_2prime(r1[out], inv1, p1);
+            }
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -521,6 +846,7 @@ __global__ void ntt_stage4_2_dit_mont_scaled_kernel(
             r1[out] = mul_mod_mont_2prime(r1[out], inv1, p1);
         }
     }
+#endif
 }
 
 __global__ void ntt_stage4_2_dif_mont_kernel(
@@ -530,6 +856,27 @@ __global__ void ntt_stage4_2_dif_mont_kernel(
     const uint32_t* roots10, const uint32_t* roots11,
     const uint32_t* roots00, const uint32_t* roots01,
     int len, int groups) {
+#if GFPPS_SPLIT_GLOBAL_PRIMES
+    // Each y plane owns one complete, disjoint residue array. The x grid
+    // covers butterfly groups; the arithmetic is unchanged and p is constant.
+    if (blockIdx.y == 0) {
+        constexpr uint32_t p0 = 998244353u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage4_dif_apply_mont(r0, roots30, roots20, roots10, roots00, len, idx, p0);
+        }
+
+    } else {
+        constexpr uint32_t p1 = 1004535809u;
+        const int id = blockIdx.x * blockDim.x + threadIdx.x;
+        const int total = gridDim.x * blockDim.x;
+        for (int idx = id; idx < groups; idx += total) {
+            ntt_stage4_dif_apply_mont(r1, roots31, roots21, roots11, roots01, len, idx, p1);
+        }
+
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     const int id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -538,16 +885,17 @@ __global__ void ntt_stage4_2_dif_mont_kernel(
         ntt_stage4_dif_apply_mont(r0, roots30, roots20, roots10, roots00, len, idx, p0);
         ntt_stage4_dif_apply_mont(r1, roots31, roots21, roots11, roots01, len, idx, p1);
     }
+#endif
 }
 
 #ifndef GFPPS_SHARED_NTT_TILE_LOG
-#define GFPPS_SHARED_NTT_TILE_LOG 11
+#define GFPPS_SHARED_NTT_TILE_LOG 10
 #endif
 #ifndef GFPPS_SHARED_RADIX8
 #define GFPPS_SHARED_RADIX8 1
 #endif
 #ifndef GFPPS_SHARED_NTT_THREADS
-#define GFPPS_SHARED_NTT_THREADS 256
+#define GFPPS_SHARED_NTT_THREADS 128
 #endif
 #ifndef GFPPS_GLOBAL_RADIX4
 #define GFPPS_GLOBAL_RADIX4 1
@@ -562,12 +910,121 @@ constexpr int kSharedNttTileLog = GFPPS_SHARED_NTT_TILE_LOG;
 constexpr int kSharedNttTile = 1 << kSharedNttTileLog;
 constexpr int kSharedNttThreads = GFPPS_SHARED_NTT_THREADS;
 
+// Prime planes share no data. All stage barriers remain block-local; each
+// block follows a uniform prime branch for its entire tile loop.
+#if GFPPS_SPLIT_SHARED_PRIMES
+template<bool Square, uint32_t P>
+__device__ __forceinline__ void ntt_tile_product_dit_mont_plane(
+    uint32_t* r, const uint32_t* multiplier, const uint32_t* tw,
+    int total_tiles, uint32_t* s) {
+    for (int tile = blockIdx.x; tile < total_tiles; tile += gridDim.x) {
+        const int base = tile * kSharedNttTile;
+        for (int i = threadIdx.x; i < kSharedNttTile; i += blockDim.x) {
+            const uint32_t x0 = r[base + i];
+            const uint32_t y0 = Square ? x0 : multiplier[base + i];
+            s[i] = mul_mod_mont_2prime(x0, y0, P);
+        }
+        __syncthreads();
+        int stage = 1;
+#if GFPPS_SHARED_RADIX8
+        for (; stage + 2 <= kSharedNttTileLog; stage += 3) {
+            const int len = 1 << (stage + 2);
+            const int root1_offset = (1 << (stage - 1)) - 1;
+            const int root2_offset = (1 << stage) - 1;
+            const int root3_offset = (1 << (stage + 1)) - 1;
+            for (int idx = threadIdx.x; idx < kSharedNttTile / 8; idx += blockDim.x) {
+                ntt_stage3_dit_apply_mont(s, tw + root1_offset, tw + root2_offset,
+                                           tw + root3_offset, len, idx, P);
+            }
+            __syncthreads();
+        }
+#endif
+        for (; stage + 1 <= kSharedNttTileLog; stage += 2) {
+            const int len = 1 << (stage + 1);
+            const int root1_offset = (1 << (stage - 1)) - 1;
+            const int root2_offset = (1 << stage) - 1;
+            for (int idx = threadIdx.x; idx < kSharedNttTile / 4; idx += blockDim.x) {
+                ntt_stage2_apply_mont(s, tw + root1_offset, tw + root2_offset, len, idx, P);
+            }
+            __syncthreads();
+        }
+        if (stage <= kSharedNttTileLog) {
+            const int len = 1 << stage;
+            const int root_offset = (1 << (stage - 1)) - 1;
+            for (int idx = threadIdx.x; idx < kSharedNttTile / 2; idx += blockDim.x) {
+                ntt_stage_one_apply_mont(s, tw + root_offset, len, idx, P);
+            }
+            __syncthreads();
+        }
+        for (int i = threadIdx.x; i < kSharedNttTile; i += blockDim.x) {
+            r[base + i] = s[i];
+        }
+        __syncthreads();
+    }
+}
+
+template<uint32_t P>
+__device__ __forceinline__ void ntt_tile_dif_mont_plane(
+    uint32_t* r, const uint32_t* tw, int total_tiles, uint32_t* s) {
+    for (int tile = blockIdx.x; tile < total_tiles; tile += gridDim.x) {
+        const int base = tile * kSharedNttTile;
+        for (int i = threadIdx.x; i < kSharedNttTile; i += blockDim.x) {
+            s[i] = r[base + i];
+        }
+        __syncthreads();
+        int stage = kSharedNttTileLog;
+#if GFPPS_SHARED_RADIX8
+        for (; stage - 2 >= 1; stage -= 3) {
+            const int len = 1 << stage;
+            const int root_big_offset = (1 << (stage - 1)) - 1;
+            const int root_mid_offset = (1 << (stage - 2)) - 1;
+            const int root_small_offset = (1 << (stage - 3)) - 1;
+            for (int idx = threadIdx.x; idx < kSharedNttTile / 8; idx += blockDim.x) {
+                ntt_stage3_dif_apply_mont(s, tw + root_big_offset, tw + root_mid_offset,
+                                           tw + root_small_offset, len, idx, P);
+            }
+            __syncthreads();
+        }
+#endif
+        for (; stage - 1 >= 1; stage -= 2) {
+            const int len = 1 << stage;
+            const int root_big_offset = (1 << (stage - 1)) - 1;
+            const int root_small_offset = (1 << (stage - 2)) - 1;
+            for (int idx = threadIdx.x; idx < kSharedNttTile / 4; idx += blockDim.x) {
+                ntt_stage2_dif_apply_mont(s, tw + root_big_offset, tw + root_small_offset, len, idx, P);
+            }
+            __syncthreads();
+        }
+        if (stage == 1) {
+            for (int idx = threadIdx.x; idx < kSharedNttTile / 2; idx += blockDim.x) {
+                ntt_stage_one_dif_apply_mont(s, tw, 2, idx, P);
+            }
+            __syncthreads();
+        }
+        for (int i = threadIdx.x; i < kSharedNttTile; i += blockDim.x) {
+            r[base + i] = s[i];
+        }
+        __syncthreads();
+    }
+}
+
+#endif
+
 template<bool Square>
 __global__ void ntt_tile_product_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
                                                  const uint32_t* multiplier0,
                                                  const uint32_t* multiplier1,
                                                  const uint32_t* tw0, const uint32_t* tw1,
                                                  int total_tiles) {
+#if GFPPS_SPLIT_SHARED_PRIMES
+    // Exactly one shared tile is allocated per block, regardless of prime.
+    __shared__ uint32_t plane[kSharedNttTile];
+    if (blockIdx.y == 0) {
+        ntt_tile_product_dit_mont_plane<Square, 998244353u>(r0, multiplier0, tw0, total_tiles, plane);
+    } else {
+        ntt_tile_product_dit_mont_plane<Square, 1004535809u>(r1, multiplier1, tw1, total_tiles, plane);
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     __shared__ uint32_t s0[kSharedNttTile];
@@ -624,11 +1081,21 @@ __global__ void ntt_tile_product_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
         }
         __syncthreads();
     }
+#endif
 }
 
 __global__ void ntt_tile_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
                                          const uint32_t* tw0, const uint32_t* tw1,
                                          int total_tiles) {
+#if GFPPS_SPLIT_SHARED_PRIMES
+    // Exactly one shared tile is allocated per block, regardless of prime.
+    __shared__ uint32_t plane[kSharedNttTile];
+    if (blockIdx.y == 0) {
+        ntt_tile_dif_mont_plane<998244353u>(r0, tw0, total_tiles, plane);
+    } else {
+        ntt_tile_dif_mont_plane<1004535809u>(r1, tw1, total_tiles, plane);
+    }
+#else
     constexpr uint32_t p0 = 998244353u;
     constexpr uint32_t p1 = 1004535809u;
     __shared__ uint32_t s0[kSharedNttTile];
@@ -679,6 +1146,7 @@ __global__ void ntt_tile_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
         }
         __syncthreads();
     }
+#endif
 }
 
 __global__ void pointwise_square2_mont_kernel(uint32_t* r0, uint32_t* r1, int len) {
@@ -771,7 +1239,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
             const int len = 1 << stage;
             const int groups = len_total / 16;
             const int y = limited_ntt_grid_y(groups, threads);
-            ntt_stage4_2_dif_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(
+            ntt_stage4_2_dif_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(
                 r0, r1,
                 tw0 + offsets[stage], tw1 + offsets[stage],
                 tw0 + offsets[stage - 1], tw1 + offsets[stage - 1],
@@ -787,7 +1255,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int len = 1 << stage;
         const int groups = len_total / 8;
         const int y = limited_ntt_grid_y(groups, threads);
-        ntt_stage3_2_dif_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+        ntt_stage3_2_dif_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                               tw0 + offsets[stage],
                                                               tw1 + offsets[stage],
                                                               tw0 + offsets[stage - 1],
@@ -803,7 +1271,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int len = 1 << stage;
         const int groups = len_total / 4;
         const int y = limited_ntt_grid_y(groups, threads);
-        ntt_stage2_2_dif_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+        ntt_stage2_2_dif_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                               tw0 + offsets[stage],
                                                               tw1 + offsets[stage],
                                                               tw0 + offsets[stage - 1],
@@ -816,7 +1284,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int len = 1 << stage;
         const int butterflies = len_total / 2;
         const int y = limited_ntt_grid_y(butterflies, threads);
-        ntt_stage_2_dif_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+        ntt_stage_2_dif_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                              tw0 + offsets[stage],
                                                              tw1 + offsets[stage],
                                                              len, butterflies);
@@ -826,7 +1294,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
     if (shared_tail != 0) {
         const int total_tiles = len_total / kSharedNttTile;
         const int blocks = std::max(1, std::min(ntt_block_limit(), total_tiles));
-        ntt_tile_dif_mont_kernel<<<blocks, kSharedNttThreads, 0, stream>>>(r0, r1, tw0, tw1, total_tiles);
+        ntt_tile_dif_mont_kernel<<<shared_prime_grid(blocks), kSharedNttThreads, 0, stream>>>(r0, r1, tw0, tw1, total_tiles);
         cuda_check(cudaGetLastError(), "ntt_tile_dif_mont launch");
     }
 }
@@ -847,10 +1315,10 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int total_tiles = len_total / kSharedNttTile;
         const int tile_blocks = std::max(1, std::min(ntt_block_limit(), total_tiles));
         if (multiplier0 == nullptr) {
-            ntt_tile_product_dit_mont_kernel<true><<<tile_blocks, kSharedNttThreads, 0, stream>>>(r0, r1, nullptr, nullptr,
+            ntt_tile_product_dit_mont_kernel<true><<<shared_prime_grid(tile_blocks), kSharedNttThreads, 0, stream>>>(r0, r1, nullptr, nullptr,
                                                                                       tw0, tw1, total_tiles);
         } else {
-            ntt_tile_product_dit_mont_kernel<false><<<tile_blocks, kSharedNttThreads, 0, stream>>>(r0, r1, multiplier0, multiplier1,
+            ntt_tile_product_dit_mont_kernel<false><<<shared_prime_grid(tile_blocks), kSharedNttThreads, 0, stream>>>(r0, r1, multiplier0, multiplier1,
                                                                                        tw0, tw1, total_tiles);
         }
         cuda_check(cudaGetLastError(), "ntt_tile_product_dit_mont launch");
@@ -872,7 +1340,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
             const int groups = len_total / 16;
             const int y = limited_ntt_grid_y(groups, threads);
             if (stage + 3 == log_len) {
-                ntt_stage4_2_dit_mont_scaled_kernel<<<dim3(1, y), threads, 0, stream>>>(
+                ntt_stage4_2_dit_mont_scaled_kernel<<<global_prime_grid(y), threads, 0, stream>>>(
                     r0, r1,
                     tw0 + offsets[stage], tw1 + offsets[stage],
                     tw0 + offsets[stage + 1], tw1 + offsets[stage + 1],
@@ -881,7 +1349,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
                     len, groups, inv0, inv1);
                 scale_fused = true;
             } else {
-                ntt_stage4_2_dit_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(
+                ntt_stage4_2_dit_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(
                     r0, r1,
                     tw0 + offsets[stage], tw1 + offsets[stage],
                     tw0 + offsets[stage + 1], tw1 + offsets[stage + 1],
@@ -899,7 +1367,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int groups = len_total / 8;
         const int y = limited_ntt_grid_y(groups, threads);
         if (stage + 2 == log_len) {
-            ntt_stage3_2_dit_mont_scaled_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+            ntt_stage3_2_dit_mont_scaled_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                                          tw0 + offsets[stage],
                                                                          tw1 + offsets[stage],
                                                                          tw0 + offsets[stage + 1],
@@ -909,7 +1377,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
                                                                          len, groups, inv0, inv1);
             scale_fused = true;
         } else {
-            ntt_stage3_2_dit_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+            ntt_stage3_2_dit_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                                   tw0 + offsets[stage],
                                                                   tw1 + offsets[stage],
                                                                   tw0 + offsets[stage + 1],
@@ -927,7 +1395,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int groups = len_total / 4;
         const int y = limited_ntt_grid_y(groups, threads);
         if (stage + 1 == log_len) {
-            ntt_stage2_2_mont_scaled_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+            ntt_stage2_2_mont_scaled_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                                      tw0 + offsets[stage],
                                                                      tw1 + offsets[stage],
                                                                      tw0 + offsets[stage + 1],
@@ -935,7 +1403,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
                                                                      len, groups, inv0, inv1);
             scale_fused = true;
         } else {
-            ntt_stage2_2_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+            ntt_stage2_2_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                               tw0 + offsets[stage],
                                                               tw1 + offsets[stage],
                                                               tw0 + offsets[stage + 1],
@@ -950,13 +1418,13 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         const int butterflies = len_total / 2;
         const int y = limited_ntt_grid_y(butterflies, threads);
         if (stage == log_len) {
-            ntt_stage_2_mont_scaled_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+            ntt_stage_2_mont_scaled_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                                     tw0 + offsets[stage],
                                                                     tw1 + offsets[stage],
                                                                     len, butterflies, inv0, inv1);
             scale_fused = true;
         } else {
-            ntt_stage_2_mont_kernel<<<dim3(1, y), threads, 0, stream>>>(r0, r1,
+            ntt_stage_2_mont_kernel<<<global_prime_grid(y), threads, 0, stream>>>(r0, r1,
                                                              tw0 + offsets[stage],
                                                              tw1 + offsets[stage],
                                                              len, butterflies);

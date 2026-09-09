@@ -10,6 +10,12 @@ not require FP64. A PRP result is **not a deterministic primality proof**.
 candidate must be at least 2. Omitting `k*` uses `k=1`. Both `k` and `n` accept
 decimal or `0x` hexadecimal notation. Ranges and a literal `±` are not accepted.
 
+The v2026.09.9 suite release updates the arithmetic implementation without
+changing component version 1.0. It enables parallel NTT prime planes and exact
+fused carry preprocessing; command syntax and `GFPPS001` checkpoints remain
+compatible. [Optimization results and validation limits](VALIDATION_optimized_20260909.md)
+include complete 100,001-digit checks on RTX 5090 and RTX 4060 Laptop.
+
 ## Quick start
 
 Windows CMD / PowerShell:
@@ -71,7 +77,7 @@ invocation**, and 0 means continue to the end:
 | Option | Meaning |
 | --- | --- |
 | `--witness 2..255` | Fermat witness; default 2. |
-| `--force-ntt-blocks 1..4096` | NTT block cap; default 96, no autotuner. |
+| `--force-ntt-blocks 1..4096` | NTT block cap per prime plane; default 256, no autotuner. |
 | `--no-graphs` | Disable CUDA Graphs for reference/diagnostic runs. |
 | `--progress-every-bits N` | Progress interval; default 100000, positive. Endpoint progress is also printed. |
 | `--checkpoint FILE` | Enable arithmetic checkpoints at this path. |
@@ -81,8 +87,10 @@ invocation**, and 0 means continue to the end:
 | `--verify-cpp-int` | Explicit CPU repetition of the computed prefix; limited to modulus size ≤8192 bits. |
 | `--print-residue` | Print the complete residue; limited to ≤8192 bits. |
 
-Run `--help` or without arguments for the banner and command summary. Version
-1.0 has no task queue, PRPNet adapter, duty-cycle throttle, or proof generation.
+Run `--help` or without arguments for the banner and command summary. The
+standalone CUDA executable has no task queue, networking, duty-cycle throttle,
+or proof generation. An external controller may invoke it for network tasks;
+those controllers are separate from this component's CLI.
 
 ## Results and reliability
 
@@ -112,9 +120,12 @@ constants and their NTT spectra. The GPU uses radix `B=2^15` and two NTT primes.
 There are currently three large products per exponent bit; multiplication by
 the small witness is fused into squaring. Choosing `R=B^m >= witness*N`
 ensures `T < N*R` for canonical input, so REDC returns less than `2N` and one
-conditional subtraction suffices. Carry preprocessing uses separate input
-and output arrays followed by a full prefix scan. All kernels, CUB operations,
-and Graph work use the same explicit stream.
+conditional subtraction suffices. The two NTT prime planes use independent
+grid work; shared transforms use 1024-point tiles and 128 threads by default.
+Carry preprocessing reads an immutable input and evaluates exactly three
+synchronous relaxations before generating the carry maps. The full CUB prefix
+scan still propagates arbitrary-length final carry chains. All kernels, CUB
+operations, and Graph work use the same explicit stream.
 
 The implementation checks CRT and 64-bit carry bounds. Limits include
 `n <= 10,000,000`, NTT length at most `2^21`, and digit count at most `2^20`.
@@ -123,6 +134,41 @@ not performance or GPU-memory guarantees. Display-only floating-point
 estimates do not determine the modular result.
 
 ## Validation and performance
+
+### September 9 optimization
+
+Controlled same-machine before/after medians for the complete `2*25206!+1`
+Fermat check (332,195 exponent bits, 100,001 digits):
+
+| Test platform | Previous path | Optimized path | Throughput gain |
+| --- | ---: | ---: | ---: |
+| RTX 5090, Linux, native `sm_120` | 31.326306 s | 19.082555 s | +64.2% |
+| RTX 4060 Laptop, Windows, native `sm_89` | 42.770754 s | 35.198393 s | +21.5% |
+
+Times are exponentiation time, not full process wall time; each row compares
+alternating runs on its own platform. All full benchmark checkpoints match
+byte-for-byte. A million-digit 4096-bit prefix improved throughput by 6.9% in
+the Windows `sm_89` comparison; no complete million-digit optimization run was
+performed. The size-dependent gains must not be extrapolated to all inputs.
+The measurements are from isolated builds of the optimized path now enabled
+by default; they are not new full timings of every final release executable.
+
+Optimization validation on both platforms includes 60 independent integer
+checks, six large-layout prefix comparisons, two complete known primorial PRPs,
+cross-build checkpoint continuation, and corrupted/wrong-parameter rejection.
+Real Linux SIGINT save/resume was exercised; the Windows transfer test did not
+repeat physical Ctrl+C testing. Full methods, formulas, historical-vs-release
+evidence, and hardware limits are in
+[the optimization validation record](VALIDATION_optimized_20260909.md).
+
+The final Windows `sm_89`, Linux `sm_89`, and Linux `sm_120` release binaries
+each passed six independent integer smoke cases, cross-Graph checkpoint
+continuation, and the same 512-bit large-NTT prefix with byte-identical states.
+All eight cubin/PTX targets were inspected; the other five OS/SM combinations
+were cross-built only. These checks do not repeat the complete performance or
+60-case optimization studies.
+
+### Original 1.0 validation (historical timings)
 
 The underlying arithmetic implementation completed 112 regression cases per
 platform on Windows/Linux, including both families/signs, 64-bit multipliers,
@@ -137,8 +183,9 @@ The 29 known primorial samples completed on both systems with residue 1 and
 byte-identical checkpoint pairs; 29 independent GMP complete repetitions also
 matched. See [sample results](KNOWN_PRIMORIAL_RESULTS.md). The largest sample
 has 45,259 decimal digits and took 16.025 s on Linux / 16.368 s on Windows for
-exponentiation on an RTX 4060 Laptop GPU. Only `sm_89` has runtime evidence;
-other release architectures are cross-compiled, not runtime-tested.
+exponentiation on an RTX 4060 Laptop GPU. These historical tests exercised
+`sm_89`; the September 9 optimization tests above add `sm_120` Linux evidence.
+Other targets must not be described as runtime-tested merely because they build.
 
 For roughly million-digit candidates, a 16,384-bit prefix took 8.685 s for
 `13*210000!-1` and 8.578 s for `13*2300000#+1`. The resulting **29–30 minute
@@ -150,8 +197,8 @@ a same-condition comparison with PRST, PrimeGrid, or another implementation.
 
 Requirements: CUDA 13.3 (or a compatible toolkit for the requested target),
 a supported C++17 host compiler, Boost.Multiprecision headers, and CUDA's CUB.
-Keep all three source files together in `src/`: `GFPPS.cu`, `ntt_backend.cuh`,
-and `sha256.hpp`.
+Keep all four source files together in `src/`: `GFPPS.cu`, `ntt_backend.cuh`,
+`sha256.hpp`, and `console_utf8.hpp`.
 
 From the repository root:
 
@@ -172,7 +219,18 @@ becomes a relative include path. Omit the architecture list to build
 `sm_86`, `sm_89`, `sm_100`, and `sm_120`. Runtime-only use needs neither nvcc nor
 the Boost source headers.
 
+The v2026.09.9 Linux GFPPS release is built for Ubuntu 22.04 compatibility with
+statically linked C++/GCC/CUDA runtimes. It still depends on the host glibc,
+Linux dynamic loader, and a compatible NVIDIA driver; it is **not a fully static
+Linux executable**. Inspect `BUILDINFO.txt` for the measured dependency and
+symbol-version floor. Building on a newer distribution can raise that floor
+even when the C++ runtime is static.
+The published Linux GFPPS binaries require GLIBC symbols up to **2.34**, with
+no dynamic GLIBCXX/libstdc++ dependency. Their ELF dependencies are libm,
+libc, and the loader; this does not change the other tools' requirements.
+
 > 中文提示：支持 `k*n!±1` 和 `k*n#±1`；`n#` 是所有不超过 n 的素数的乘积。
 > 断点必须显式指定 `--checkpoint 文件`，再次启动加 `--resume-checkpoint`。
-> 默认每 100000 bits 显示进度；PRP 不是确定性素数证明。百万位约半小时
-> 目前仅为前缀估算，未完成全程验证。
+> 默认每 100000 bits 显示进度；PRP 不是确定性素数证明。本次优化保留 1.0
+> 版本号和旧断点格式，十万位完整案例在 5090/4060 上均有收益；百万位只做了
+> 前缀验证与计时，未验证本次优化的百万位全程耗时。

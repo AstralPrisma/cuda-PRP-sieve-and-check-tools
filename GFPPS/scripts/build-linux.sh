@@ -33,6 +33,7 @@ cd -- "${src_dir}"
 for arch in "${architectures[@]}"; do
   [[ "${arch}" =~ ^sm_[0-9]+$ ]] || { printf 'Invalid architecture: %s\n' "${arch}" >&2; exit 1; }
   "${nvcc_bin}" -O3 -std=c++17 --threads 1 -arch="${arch}" \
-    --default-stream per-thread "${include_args[@]}" \
+    --default-stream per-thread --cudart=static \
+    -Xcompiler=-static-libstdc++,-static-libgcc "${include_args[@]}" \
     GFPPS.cu -o "${out_dir}/GFPPS_${arch}"
 done

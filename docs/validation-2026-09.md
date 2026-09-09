@@ -1,16 +1,55 @@
 # September 2026 local validation
 
 This record covers the GFPS 4.1/4.4 and GSRPS 2.3 arithmetic promotions,
-GFPPS 1.0, the GFNSV CUDA 1.0/1.1 sieve, and GSRSV 2.1. It describes tested cases, not a guarantee that every
+GFPPS 1.0 and its September 9 optimization, the GFNSV CUDA 1.0/1.1 sieve, and
+GSRSV 2.1. It describes tested cases, not a guarantee that every
 parameter, device, or hardware execution is free of defects.
 
 ## Hardware and build coverage
 
-The runtime test device was an NVIDIA GeForce RTX 4060 Laptop GPU (`sm_89`).
+The initial runtime test device was an NVIDIA GeForce RTX 4060 Laptop GPU (`sm_89`).
 Windows x64 and Linux/WSL x86-64 builds use CUDA 13.3, with MSVC and GCC host
 compilers respectively. `sm_86`, `sm_100`, and `sm_120` binaries were
 cross-compiled and their cubin targets checked; they were not executed on
-matching hardware.
+matching hardware in those initial tests. The GFPPS optimization below adds
+Linux/RTX 5090 `sm_120` evidence. This does not extend runtime coverage to
+other tools, operating systems, or hardware targets.
+
+## GFPPS 1.0 parallel NTT and carry optimization (v2026.09.9)
+
+The optimized path splits the two NTT prime planes and uses 1024-point shared
+tiles with 128 threads, a default block cap of 256, and exact fusion of three
+carry relaxations with carry-map generation. The full CUB carry scan and error
+checks remain. There is no bounded-carry approximation or unbounded
+carry-backtracking path. Component version 1.0 and `GFPPS001` checkpoints are
+unchanged.
+
+Complete `2*25206!+1` (100,001 digits) exponentiation-time medians improved from
+31.326306 to 19.082555 seconds on Linux/RTX 5090, and from 42.770754 to
+35.198393 seconds on Windows/RTX 4060 Laptop. These are separate controlled
+before/after comparisons, with byte-identical final checkpoints; the throughput
+gains are 64.2% and 21.5%. The million-digit 4060 result (+6.9%) is only a
+4096-bit prefix, not a full-run result.
+
+Both platform studies passed 60 independent integer checks, six large-layout
+prefix comparisons, two complete known primorial PRPs, cross-build resume,
+and damaged/wrong-parameter checkpoint rejection. Linux SIGINT save/resume was
+tested; Windows physical Ctrl+C was not newly repeated by the transfer study.
+The [detailed optimization record](../GFPPS/VALIDATION_optimized_20260909.md)
+separates this evidence from historical tests and per-artifact release checks.
+
+The final default-path release binaries were separately smoke-tested on
+Windows `sm_89`, Linux `sm_89`, and Linux `sm_120`: each passed six independent
+integer cases, cross-Graph checkpoint continuation, and a matching 512-bit
+large-NTT prefix. All eight cubin/PTX targets were inspected; other OS/SM
+combinations were cross-built only. The complete timing/60-case studies above
+belong to the preceding same-path optimization builds, not fresh full runs
+on every final artifact. Linux ELF inspection found a maximum required GLIBC
+version of 2.34, with no dynamic GLIBCXX/libstdc++ dependency.
+
+Only GFPPS's eight binaries are rebuilt for this suite release. The other
+forty executables are reused from v2026.09.8 with unchanged source/header hashes
+and original provenance. GFPS's separate 5090 optimization is not promoted.
 
 ## GSRSV 2.1 factorial/primorial optimization (v2026.09.8)
 
