@@ -16,7 +16,7 @@ The eight tools have independent component versions:
 | GFNSV | 1.1 |
 | GSRSV | 2.1 |
 | GNCWSV | 1.0 |
-| GHCWSV | 1.0 |
+| GHCWSV | 1.1 |
 | GHCWPS | 1.0 |
 
 The v2026.09.10 release adds the two hyper-Cullen/Woodall tools. It publishes

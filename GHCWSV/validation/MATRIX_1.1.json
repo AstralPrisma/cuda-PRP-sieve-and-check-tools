@@ -1,0 +1,58 @@
+[
+  {
+    "platform": "windows",
+    "arch": 86,
+    "sha256": "7a9962fd07793a456015d597c569d98e5f7214ad5d7833809f4bb35fb3dec883",
+    "host_smoke": true,
+    "gpu_runtime_tested": false
+  },
+  {
+    "platform": "windows",
+    "arch": 89,
+    "sha256": "63a2cecb55ca86324bdd94de99bc37dcab1203ad0f8546d646d3af6959ca0e51",
+    "host_smoke": true,
+    "gpu_runtime_tested": true
+  },
+  {
+    "platform": "windows",
+    "arch": 100,
+    "sha256": "64aaa7dd1205fe23d3251e5c6d4719053d2f5b9a7b2b3e18f5ba02ec49e6155f",
+    "host_smoke": true,
+    "gpu_runtime_tested": false
+  },
+  {
+    "platform": "windows",
+    "arch": 120,
+    "sha256": "6e5648501ee29f03de745b588f3356d19b6b5c0deaee7feff2d197d348955c34",
+    "host_smoke": true,
+    "gpu_runtime_tested": false
+  },
+  {
+    "platform": "linux",
+    "arch": 86,
+    "sha256": "0038904e5e350ff66ec7d68e25f218862b8ce57bb4d0f8ce1d41318441b0d3fd",
+    "host_smoke": true,
+    "gpu_runtime_tested": false
+  },
+  {
+    "platform": "linux",
+    "arch": 89,
+    "sha256": "06e63184cea1ae1a304fbd83d5f7cdca4d1f33f1dfeb634d84dcc8d7981cdcc1",
+    "host_smoke": true,
+    "gpu_runtime_tested": true
+  },
+  {
+    "platform": "linux",
+    "arch": 100,
+    "sha256": "ae6b602c5cf96c7fcbd41e6e75e672f6ac47fefc7bbe9c796574aa82ffc1e85b",
+    "host_smoke": true,
+    "gpu_runtime_tested": false
+  },
+  {
+    "platform": "linux",
+    "arch": 120,
+    "sha256": "02b4b81be7fb6926d5e9bdc4cd1a71caf24023f9ca85b36ac6574e5f7307d29d",
+    "host_smoke": true,
+    "gpu_runtime_tested": false
+  }
+]

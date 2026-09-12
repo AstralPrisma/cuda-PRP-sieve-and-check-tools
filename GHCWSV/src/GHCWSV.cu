@@ -47,6 +47,8 @@
 namespace ghcw_sieve {
 constexpr uint64_t PMAX_MAX=(uint64_t(1)<<62)-1;
 constexpr size_t MAX_CANDIDATES=10000000;
+constexpr size_t MAX_SNAPSHOT_BYTES=320*1024*1024;
+constexpr uint32_t PLUS=1u, MINUS=2u;
 static volatile std::sig_atomic_t g_interrupted=0;
 static void handle_interrupt(int) {g_interrupted=1;}
 #ifdef _WIN32
@@ -81,7 +83,7 @@ __host__ __device__ bool term_equals_prime(uint32_t b,uint32_t n,int c,uint64_t 
 }
 
 __global__ void sieve_kernel(const uint64_t* primes,size_t count,const uint32_t* ns,
-        size_t nc,uint32_t b,int c,uint32_t* alive,uint64_t* factors,bool direct,const uint64_t* coefficients) {
+        size_t nc,uint32_t b,uint32_t sign_mask,uint32_t* alive,uint64_t* factors,bool direct,const uint64_t* coefficients) {
     constexpr size_t tile=256;
     const size_t jobs=count*((nc+tile-1)/tile);
     for(size_t job=blockIdx.x*blockDim.x+threadIdx.x;job<jobs;job+=size_t(blockDim.x)*gridDim.x){
@@ -95,18 +97,25 @@ __global__ void sieve_kernel(const uint64_t* primes,size_t count,const uint32_t*
         uint64_t gaps[16];gaps[0]=step;
         for(int j=1;j<16;++j)gaps[j]=d_mont_mul(gaps[j-1],step,mc);
         uint64_t value=d_mont_pow_rep(step,ns[first],mc);
-        if(transformed){if(c==1)value=p-value;value=d_mont_mul(value,1,mc);}
+        if(transformed)value=d_mont_mul(value,1,mc);
         for(size_t i=first;i<last;++i){
-            bool hit;
-            if(transformed) hit=value==(coefficients?coefficients[i]:uint64_t(ns[i])%p);
+            bool hit_plus,hit_minus;
+            if(transformed) {
+                uint64_t target=coefficients?coefficients[i]:uint64_t(ns[i])%p;
+                hit_plus=(p-value)==target;hit_minus=value==target;
+            }
             else {
                 uint64_t nm=d_mont_mul(uint64_t(ns[i])%p,mc.r2,mc);
                 uint64_t nb=d_mont_pow_rep(nm,b,mc);
                 uint64_t product=d_mont_mul(value,nb,mc);
-                hit=product==(c==1?p-mc.rmod:mc.rmod);
+                hit_plus=product==p-mc.rmod;hit_minus=product==mc.rmod;
             }
-            if(hit && !term_equals_prime(b,ns[i],c,p) && atomicCAS(alive+i,1u,0u)==1u)
-                factors[i]=p;
+            // Each sign has an independent atomic bit and factor slot. Never
+            // remove the opposite sign, and preserve a prime equal to its divisor.
+            if((sign_mask&PLUS) && hit_plus && !term_equals_prime(b,ns[i],1,p)
+                    && (atomicAnd(alive+i,~PLUS)&PLUS))factors[2*i]=p;
+            if((sign_mask&MINUS) && hit_minus && !term_equals_prime(b,ns[i],-1,p)
+                    && (atomicAnd(alive+i,~MINUS)&MINUS))factors[2*i+1]=p;
             if(i+1<last){uint64_t gap=uint64_t(ns[i+1])-ns[i];
                 uint64_t multiplier=gap<=16?gaps[gap-1]:d_mont_pow_rep(step,gap,mc);
                 value=d_mont_mul(value,multiplier,mc);
@@ -185,15 +194,32 @@ void atomic_text(const std::filesystem::path& path,const std::string& text) {
     int fd=open(parent.c_str(),O_RDONLY|O_DIRECTORY);if(fd>=0){fsync(fd);close(fd);}
 #endif
 }
-struct Queue {uint32_t b=0;int c=1;uint64_t p=1;std::vector<uint32_t> ns;};
+struct Queue {
+    uint32_t b=0;int c=1;uint64_t p=1;
+    std::vector<uint32_t> ns,masks;
+    uint32_t sign_mask() const {return c==0?PLUS|MINUS:c==1?PLUS:MINUS;}
+    std::pair<size_t,size_t> sign_counts() const {
+        size_t plus=0,minus=0;for(auto mask:masks){plus+=bool(mask&PLUS);minus+=bool(mask&MINUS);}return {plus,minus};
+    }
+    size_t terms() const {auto counts=sign_counts();return counts.first+counts.second;}
+};
 std::string serialize(const Queue& q) {
-    std::ostringstream out;out<<"ABC "<<q.b<<"^$a*$a^"<<q.b<<(q.c==1?"+1":"-1")
-       <<" // GHCWSV v1 sieved_to="<<q.p<<" count="<<q.ns.size()<<"\n";
-    for(auto n:q.ns)out<<n<<"\n";
+    if(q.ns.size()!=q.masks.size())fail("internal sign-mask length mismatch");
+    std::ostringstream out;out<<"ABC "<<q.b<<"^$a*$a^"<<q.b;
+    if(q.c==0)out<<"$b // GHCWSV v2";
+    else out<<(q.c==1?"+1":"-1")<<" // GHCWSV v1";
+    out<<" sieved_to="<<q.p<<" count="<<q.terms()<<"\n";
+    for(size_t i=0;i<q.ns.size();++i){
+        if(!q.masks[i] || (q.masks[i]&~q.sign_mask()) || (i && q.ns[i]<=q.ns[i-1]))fail("internal invalid candidate/sign ordering");
+        if(q.c==0){
+            if(q.masks[i]&MINUS)out<<q.ns[i]<<" -1\n";
+            if(q.masks[i]&PLUS)out<<q.ns[i]<<" +1\n";
+        }else out<<q.ns[i]<<"\n";
+    }
     std::string body=out.str();return body+"#SHA256 "+sha(body)+"\n";
 }
 Queue deserialize(std::string content) {
-    if(content.size()>128*1024*1024)fail("input exceeds 128MiB limit");
+    if(content.size()>MAX_SNAPSHOT_BYTES)fail("input exceeds 320MiB limit");
     // Permit Windows text editors to change LF to CRLF without changing the
     // semantic checkpoint; all other header/body edits require a new digest.
     content.erase(std::remove(content.begin(),content.end(),'\r'),content.end());
@@ -202,18 +228,28 @@ Queue deserialize(std::string content) {
     std::string body=content.substr(0,end);
     if(sha(body)!=content.substr(end+8,64))fail("GHCWSV SHA256 mismatch");
     std::istringstream input(body);std::string line;std::getline(input,line);
-    static const std::regex pattern(R"(^ABC ([0-9]+)\^\$a\*\$a\^([0-9]+)([+-])1 // GHCWSV v1 sieved_to=([0-9]+) count=([0-9]+)$)");
+    static const std::regex pattern(R"(^ABC ([0-9]+)\^\$a\*\$a\^([0-9]+)(\+1|-1|\$b) // GHCWSV v([12]) sieved_to=([0-9]+) count=([0-9]+)$)");
     std::smatch m;if(!std::regex_match(line,m,pattern))fail("unsupported GHCWSV header");
+    bool both=m[3]=="$b";if((both && m[4]!="2") || (!both && m[4]!="1"))fail("header sign/version mismatch");
     uint64_t base=ghcw_model::number(m[1]);if(base!=ghcw_model::number(m[2]))fail("header base mismatch");
-    Queue q;ghcw_model::validate({base,2,1});q.b=uint32_t(base);q.c=m[3]=="+"?1:-1;
-    q.p=ghcw_model::number(m[4]);if(q.p<1 || q.p>PMAX_MAX)fail("invalid saved sieve boundary");
-    uint64_t count=ghcw_model::number(m[5]);if(count>MAX_CANDIDATES)fail("too many candidates");
+    Queue q;ghcw_model::validate({base,2,1});q.b=uint32_t(base);q.c=both?0:m[3]=="+1"?1:-1;
+    q.p=ghcw_model::number(m[5]);if(q.p<1 || q.p>PMAX_MAX)fail("invalid saved sieve boundary");
+    uint64_t count=ghcw_model::number(m[6]);if(count>MAX_CANDIDATES*(both?2u:1u))fail("too many candidates");
+    uint64_t rows=0,previous_n=0;int previous_sign=0;
+    static const std::regex pair_pattern(R"(^([0-9]+) ([+-]1)$)");
     while(std::getline(input,line)){
-        auto n=ghcw_model::number(line);ghcw_model::validate({q.b,n,q.c});
-        if(!q.ns.empty() && n<=q.ns.back())fail("candidates must be strictly increasing");
-        q.ns.push_back(uint32_t(n));if(q.ns.size()>count)fail("extra candidate data");
+        uint64_t n;int sign=q.c;
+        if(both){std::smatch pair;if(!std::regex_match(line,pair,pair_pattern))fail("both-sign rows require n and +1/-1");n=ghcw_model::number(pair[1]);sign=pair[2]=="+1"?1:-1;}
+        else n=ghcw_model::number(line);
+        ghcw_model::validate({q.b,n,sign});
+        if(n<previous_n || (n==previous_n && sign<=previous_sign))fail("candidates must be strictly ordered by n, then sign (-1 before +1)");
+        uint32_t mask=sign==1?PLUS:MINUS;
+        if(!q.ns.empty() && n==q.ns.back())q.masks.back()|=mask;
+        else {q.ns.push_back(uint32_t(n));q.masks.push_back(mask);}
+        previous_n=n;previous_sign=sign;
+        if(++rows>count || q.ns.size()>MAX_CANDIDATES)fail("extra/oversized candidate data");
     }
-    if(q.ns.size()!=count)fail("truncated candidate list");return q;
+    if(rows!=count)fail("truncated candidate list");return q;
 }
 uint64_t number(const std::string& text) {
     static const std::regex pat(R"(^([0-9]+)(?:[eE]([0-9]+))?$)");std::smatch m;
@@ -225,11 +261,11 @@ uint64_t number(const std::string& text) {
 struct Options {
     std::string input,output,factors,algorithm="auto";uint64_t base=0,lo=0,hi=0,pmax=0;
     int sign=0,device=0,blocks=0,threads=128,prime_threads=8;
-    uint64_t batch=8192,progress=1,checkpoint=60;bool cpu=false,verify=false;
+    uint64_t batch=8192,progress=1,checkpoint=60;bool cpu=false,verify=false,sign_given=false;
     PrimeMode prime_mode=PrimeMode::Auto;
 };
-void help(){std::cout<<"GHCWSV 1.0 CUDA - Generalized Hyper-Cullen / Woodall Siever\n"
- <<"Generate: GHCWSV -b B -n NMIN -N NMAX --sign +/-1 -P PMAX -o FILE\n"
+void help(){std::cout<<"GHCWSV 1.1 CUDA - Generalized Hyper-Cullen / Woodall Siever\n"
+ <<"Generate: GHCWSV -b B -n NMIN -N NMAX --sign +1|-1|both -P PMAX -o FILE\n"
  <<"Resume:   GHCWSV -i FILE -P PMAX -o FILE\n"
  <<"Ranges inclusive; candidates are b^n*n^b+/-1; b,n in [2,2^32-1].\n"
  <<"--algorithm auto|direct|transform --prime-generator auto|primesieve|segmented|mr\n"
@@ -237,12 +273,13 @@ void help(){std::cout<<"GHCWSV 1.0 CUDA - Generalized Hyper-Cullen / Woodall Sie
  <<"--progress-seconds N (1) --checkpoint-seconds N (60) --verify\n"
  <<"-O FACTORS (optional) --cpu-reference (small tests, no CUDA calls)\n"
  <<"--selftest runs bounded GPU arithmetic tests.\n"
- <<"A single checksummed candidate file holds the safe completed prime boundary.\n";}
+ <<"A single checksummed candidate file holds the safe completed prime boundary.\n"
+ <<"Both signs share modular work; v2 rows are n -1 / n +1; v1 single-sign files remain supported.\n";}
 Options parse(int argc,char** argv){Options o;
  for(int i=1;i<argc;++i){std::string a=argv[i];auto next=[&](){if(++i>=argc)fail("missing value for "+a);return std::string(argv[i]);};
     if(a=="-b"||a=="--base")o.base=number(next());
     else if(a=="-n"||a=="--nmin")o.lo=number(next());else if(a=="-N"||a=="--nmax")o.hi=number(next());
-    else if(a=="--sign"){auto s=next();if(s!="+1"&&s!="-1"&&s!="1")fail("sign must be +1 or -1");o.sign=s=="-1"?-1:1;}
+    else if(a=="--sign"){auto s=next();if(s!="+1"&&s!="-1"&&s!="1"&&s!="both"&&s!="+/-1")fail("sign must be +1, -1 or both");o.sign=(s=="both"||s=="+/-1")?0:s=="-1"?-1:1;o.sign_given=true;}
     else if(a=="-P"||a=="--pmax")o.pmax=number(next());
     else if(a=="-i")o.input=next();else if(a=="-o")o.output=next();else if(a=="-O")o.factors=next();
     else if(a=="--algorithm")o.algorithm=next();
@@ -263,22 +300,28 @@ Options parse(int argc,char** argv){Options o;
 }
 Queue load(const Options& o){Queue q;
  if(!o.input.empty()){
-    auto path=std::filesystem::u8path(o.input);if(std::filesystem::file_size(path)>128*1024*1024)fail("input too large");
+    auto path=std::filesystem::u8path(o.input);if(std::filesystem::file_size(path)>MAX_SNAPSHOT_BYTES)fail("input too large");
     std::ifstream f(path,std::ios::binary);std::string text((std::istreambuf_iterator<char>(f)),{});if(f.bad())fail("read error");q=deserialize(text);
-    if((o.base&&o.base!=q.b)||(o.sign&&o.sign!=q.c)||o.lo||o.hi)fail("resume header mismatch; n-range overrides not allowed");
+    if((o.base&&o.base!=q.b)||(o.sign_given&&o.sign!=q.c)||o.lo||o.hi)fail("resume header mismatch; n-range overrides not allowed");
  }else{
-    ghcw_model::validate({o.base,o.lo,o.sign});ghcw_model::validate({o.base,o.hi,o.sign});
+    if(!o.sign_given)fail("new ranges require --sign +1, -1 or both");
+    ghcw_model::validate({o.base,o.lo,1});ghcw_model::validate({o.base,o.hi,1});
     if(o.hi<o.lo || o.hi-o.lo+1>MAX_CANDIDATES)fail("invalid/oversized n range (limit10M slots)");
     if(std::filesystem::exists(std::filesystem::u8path(o.output)))fail("output already exists; resume with -i or choose another file");
     q.b=uint32_t(o.base);q.c=o.sign;
-    for(uint64_t n=o.lo;n<=o.hi;++n)if(ghcw_model::composite_reason({q.b,n,q.c}).empty())q.ns.push_back(uint32_t(n));
+    for(uint64_t n=o.lo;n<=o.hi;++n){
+        uint32_t mask=0;
+        if((q.sign_mask()&PLUS) && ghcw_model::composite_reason({q.b,n,1}).empty())mask|=PLUS;
+        if((q.sign_mask()&MINUS) && ghcw_model::composite_reason({q.b,n,-1}).empty())mask|=MINUS;
+        if(mask){q.ns.push_back(uint32_t(n));q.masks.push_back(mask);}
+    }
  }
  if(o.pmax<q.p)fail("pmax is below saved sieve boundary");return q;
 }
 template<class T>struct Device {T* p=nullptr;~Device(){if(p)cudaFree(p);}void alloc(size_t n){CUDA_CHECK(cudaMalloc(&p,n*sizeof(T)));}};
 int run(int argc,char** argv){
  if(argc==1){help();return 0;}if(argc==2 && std::string(argv[1])=="--selftest")return selftest();
- if(argc==2 && std::string(argv[1])=="--version"){std::cout<<"GHCWSV 1.0\n";return 0;}
+ if(argc==2 && std::string(argv[1])=="--version"){std::cout<<"GHCWSV 1.1\n";return 0;}
  for(int i=1;i<argc;++i)if(std::string(argv[i])=="--help" || std::string(argv[i])=="-h"){help();return 0;}
  auto o=parse(argc,argv);auto q=load(o);auto output=std::filesystem::u8path(o.output);
  if(!o.factors.empty()) {
@@ -289,52 +332,64 @@ int run(int argc,char** argv){
             fail("factor output must differ from candidate input/output");
     }
  }
- const uint64_t start_p=q.p;const size_t initial=q.ns.size();
+ const uint64_t start_p=q.p;const size_t initial=q.terms(),initial_ns=q.ns.size();
  std::ofstream factors;if(!o.factors.empty()){factors.open(std::filesystem::u8path(o.factors),std::ios::app);if(!factors)fail("cannot open factors output");}
- auto save=[&](){atomic_text(output,serialize(q));std::cout<<"checkpoint: sieved_to="<<q.p<<", survivors="<<q.ns.size()<<", file="<<o.output<<"\n";};
+ auto save=[&](){atomic_text(output,serialize(q));auto counts=q.sign_counts();std::cout<<"checkpoint: sieved_to="<<q.p<<", survivors="<<counts.first+counts.second<<", plus="<<counts.first<<", minus="<<counts.second<<", file="<<o.output<<"\n";};
  save();if(q.ns.empty()||q.p==o.pmax)return 0;
- std::cout<<"GHCWSV 1.0: b="<<q.b<<", sign="<<q.c<<", candidates="<<q.ns.size()<<", p in ("<<q.p<<","<<o.pmax<<"]\n";
+ std::cout<<"GHCWSV 1.1: b="<<q.b<<", sign="<<(q.c==0?"both":q.c==1?"+1":"-1")<<", candidates="<<initial<<", n_values="<<q.ns.size()<<", p in ("<<q.p<<","<<o.pmax<<"]\n";
  const auto started=std::chrono::steady_clock::now();auto last_progress=started,last_save=started;
  uint64_t prime_count=0;double gpu_seconds=0,wait_seconds=0;
  auto report=[&](bool force){auto now=std::chrono::steady_clock::now();double elapsed=std::chrono::duration<double>(now-started).count();
     if(force||std::chrono::duration<double>(now-last_progress).count()>=o.progress){
        double fraction=o.pmax>start_p?double(q.p-start_p)/double(o.pmax-start_p):1;
-       std::cout<<"progress: p="<<q.p<<", survivors="<<q.ns.size()<<", removed="<<initial-q.ns.size()
+       auto counts=q.sign_counts();size_t survivors=counts.first+counts.second;
+       std::cout<<"progress: p="<<q.p<<", survivors="<<survivors<<", plus="<<counts.first<<", minus="<<counts.second<<", removed="<<initial-survivors
        <<", primes_per_s="<<(elapsed?prime_count/elapsed:0)<<", elapsed_s="<<elapsed
        <<", eta_s="<<(fraction>0?elapsed*(1-fraction)/fraction:0)<<"\n";last_progress=now;}
     if(std::chrono::duration<double>(now-last_save).count()>=o.checkpoint){save();last_save=now;}
  };
  auto accept=[&](const std::vector<uint32_t>& alive,const std::vector<uint64_t>& fs){
-    std::vector<uint32_t> kept;kept.reserve(q.ns.size());
-    for(size_t i=0;i<q.ns.size();++i){if(alive[i]){kept.push_back(q.ns[i]);continue;}
-        uint64_t p=fs[i];if(p<2 || !is_prime_mr(p) || (mul_mod_host(pow_mod_host(q.b,q.ns[i],p),pow_mod_host(q.ns[i],q.b,p),p)+(q.c==1?1:p-1))%p!=0 || term_equals_prime(q.b,q.ns[i],q.c,p))
-            fail("factor verification failed; refusing to save this batch");
-        if(factors.is_open())factors<<p<<" | "<<ghcw_model::Expression{q.b,q.ns[i],q.c}.text()<<"\n";
-    }q.ns.swap(kept);if(factors.is_open()){factors.flush();if(!factors)fail("factor output write failed");}
+    if(alive.size()!=q.ns.size()||fs.size()!=2*q.ns.size())fail("batch result length mismatch");
+    std::vector<uint32_t> kept,masks;kept.reserve(q.ns.size());masks.reserve(q.ns.size());
+    for(size_t i=0;i<q.ns.size();++i){
+        if(alive[i]&~q.masks[i])fail("batch resurrected an excluded sign");
+        for(unsigned slot=0;slot<2;++slot){uint32_t bit=1u<<slot;if(!(q.masks[i]&bit)||(alive[i]&bit))continue;
+            int c=slot==0?1:-1;uint64_t p=fs[2*i+slot];
+            if(p<2 || !is_prime_mr(p) || (mul_mod_host(pow_mod_host(q.b,q.ns[i],p),pow_mod_host(q.ns[i],q.b,p),p)+(c==1?1:p-1))%p!=0 || term_equals_prime(q.b,q.ns[i],c,p))
+                fail("factor verification failed; refusing to save this batch");
+            if(factors.is_open())factors<<p<<" | "<<ghcw_model::Expression{q.b,q.ns[i],c}.text()<<"\n";
+        }
+        if(alive[i]){kept.push_back(q.ns[i]);masks.push_back(alive[i]);}
+    }q.ns.swap(kept);q.masks.swap(masks);if(factors.is_open()){factors.flush();if(!factors)fail("factor output write failed");}
  };
  if(o.cpu){
     if(o.pmax-q.p>1000000 || (o.pmax-q.p)*q.ns.size()>5000000)fail("CPU reference restricted to small validation ranges");
     for(uint64_t p=q.p+1;p<=o.pmax&&!g_interrupted;++p){if(!is_prime_mr(p))continue;
-       std::vector<uint32_t> alive(q.ns.size(),1);std::vector<uint64_t> fs(q.ns.size());
-       for(size_t i=0;i<q.ns.size();++i)if((mul_mod_host(pow_mod_host(q.b,q.ns[i],p),pow_mod_host(q.ns[i],q.b,p),p)+(q.c==1?1:p-1))%p==0 && !term_equals_prime(q.b,q.ns[i],q.c,p)){alive[i]=0;fs[i]=p;}
+       std::vector<uint32_t> alive=q.masks;std::vector<uint64_t> fs(2*q.ns.size());
+       for(size_t i=0;i<q.ns.size();++i){
+           auto product=mul_mod_host(pow_mod_host(q.b,q.ns[i],p),pow_mod_host(q.ns[i],q.b,p),p);
+           for(unsigned slot=0;slot<2;++slot){uint32_t bit=1u<<slot;int c=slot==0?1:-1;
+               if((alive[i]&bit) && (product+(c==1?1:p-1))%p==0 && !term_equals_prime(q.b,q.ns[i],c,p)){alive[i]&=~bit;fs[2*i+slot]=p;}
+           }
+       }
        accept(alive,fs);q.p=p;++prime_count;report(false);
     }
  }else{
     CUDA_CHECK(cudaSetDevice(o.device));cudaDeviceProp prop{};CUDA_CHECK(cudaGetDeviceProperties(&prop,o.device));
     std::cout<<"CUDA device: "<<prop.name<<", algorithm="<<o.algorithm<<", fallback=direct, prime_threads="<<o.prime_threads<<"\n";
     constexpr size_t term_budget=2000000;
-    const uint64_t effective_batch=std::min(o.batch,std::max(uint64_t(1),uint64_t(term_budget/initial)));
-    std::cout<<"work-batching: primes="<<effective_batch<<", candidate_tile=256, terms_per_kernel<="<<term_budget<<"\n";
-    Device<uint64_t> dp,df,dc;Device<uint32_t> dn,da;dp.alloc(effective_batch);dn.alloc(initial);da.alloc(initial);df.alloc(initial);dc.alloc(initial);
+    const uint64_t effective_batch=std::min(o.batch,std::max(uint64_t(1),uint64_t(term_budget/initial_ns)));
+    std::cout<<"work-batching: primes="<<effective_batch<<", candidate_tile=256, n_values_per_kernel<="<<term_budget<<"\n";
+    Device<uint64_t> dp,df,dc;Device<uint32_t> dn,da;dp.alloc(effective_batch);dn.alloc(initial_ns);da.alloc(initial_ns);df.alloc(2*initial_ns);dc.alloc(initial_ns);
     PrimeStream stream(q.p,o.pmax,effective_batch,o.prime_mode,100000000,8,o.prime_threads,12,4,1,false);
     PrimeBatchPipeline pipeline(stream,4);std::cout<<"Prime generator: "<<stream.description()<<"\n";
     PrimeBatch batch;
     while(!g_interrupted&&!q.ns.empty()&&pipeline.next(batch,wait_seconds)){
        auto begin=std::chrono::steady_clock::now();size_t count=q.ns.size();
        CUDA_CHECK(cudaMemcpy(dn.p,q.ns.data(),count*4,cudaMemcpyHostToDevice));
-       std::vector<uint32_t> alive(count,1);std::vector<uint64_t> fs(count);
+       std::vector<uint32_t> alive=q.masks;std::vector<uint64_t> fs(2*count);
        CUDA_CHECK(cudaMemcpy(da.p,alive.data(),count*4,cudaMemcpyHostToDevice));
-       CUDA_CHECK(cudaMemset(df.p,0,count*8));
+       CUDA_CHECK(cudaMemset(df.p,0,count*16));
        size_t root_count=0;std::vector<uint64_t> ordered,coefficients;
        // When every n^b fits below this batch's smallest prime, coefficients
        // can be prepared once on the CPU and compared directly without a pow.
@@ -354,7 +409,7 @@ int run(int argc,char** argv){
            auto launch=[&](size_t pi,size_t np,bool direct){if(!np)return;
                size_t jobs=np*((take+255)/256);
                int blocks=o.blocks?o.blocks:std::max(1,std::min(int((jobs+o.threads-1)/o.threads),prop.multiProcessorCount*4));
-               sieve_kernel<<<blocks,o.threads>>>(dp.p+pi,np,dn.p+offset,take,q.b,q.c,da.p+offset,df.p+offset,direct,coefficients.empty()?nullptr:dc.p+offset);
+               sieve_kernel<<<blocks,o.threads>>>(dp.p+pi,np,dn.p+offset,take,q.b,q.sign_mask(),da.p+offset,df.p+2*offset,direct,coefficients.empty()?nullptr:dc.p+offset);
                CUDA_CHECK(cudaGetLastError());CUDA_CHECK(cudaDeviceSynchronize());
            };
            // Keep each warp on one arithmetic path. The original sorted batch
@@ -362,14 +417,14 @@ int run(int argc,char** argv){
            launch(0,root_count,false);launch(root_count,batch.count-root_count,true);
        }
        CUDA_CHECK(cudaMemcpy(alive.data(),da.p,count*4,cudaMemcpyDeviceToHost));
-       CUDA_CHECK(cudaMemcpy(fs.data(),df.p,count*8,cudaMemcpyDeviceToHost));
+       CUDA_CHECK(cudaMemcpy(fs.data(),df.p,count*16,cudaMemcpyDeviceToHost));
        gpu_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
        accept(alive,fs);q.p=batch.last();prime_count+=batch.count;report(false);
     }
  }
  if(!g_interrupted)q.p=o.pmax;
  save();report(true);
- std::cout<<"done: primes="<<prime_count<<", survivors="<<q.ns.size()<<", producer_wait_s="<<wait_seconds
+ auto counts=q.sign_counts();std::cout<<"done: primes="<<prime_count<<", survivors="<<counts.first+counts.second<<", plus="<<counts.first<<", minus="<<counts.second<<", producer_wait_s="<<wait_seconds
  <<", gpu_batch_wall_s="<<gpu_seconds<<", result="<<(g_interrupted?"INTERRUPTED":"COMPLETE")<<"\n";
  return g_interrupted?130:0;
 }
@@ -386,7 +441,7 @@ void display_banner() {
     printf("%s\n","       `Y8bood8P'   Y8P o888o   o888o Y8P  `Y8bood8P'  Y8P     `8'      `8'     Y8P 8''88888P'  Y8P     `8'     Y8P      ");
     printf("%s\n","\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90");
     printf("%s\n","                                        Generalized Hyper Cullen / Woodall Siever                                        ");
-    printf("%s\n","                                            Version 1.0 CUDA by A.P. Sep 2026                                            ");
+    printf("%s\n","                                            Version 1.1 CUDA by A.P. Sep 2026                                            ");
 }
 
 int main(int argc,char** argv){prp_console::initialize_utf8_output();std::cout.setf(std::ios::unitbuf);

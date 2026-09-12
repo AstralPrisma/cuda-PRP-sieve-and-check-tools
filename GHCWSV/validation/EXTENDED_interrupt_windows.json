@@ -1,0 +1,8 @@
+{
+  "partial_p": 1000116406871,
+  "pmax": 1000200000000,
+  "survivors": 1716,
+  "checkpoint_byte_match": true,
+  "signal": "CTRL_BREAK",
+  "result": "PASS"
+}

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.10",
+    [string]$SuiteVersion = "v2026.09.11",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
@@ -22,7 +22,7 @@ $versions = [ordered]@{
     GFNSV = "1.1"
     GSRSV = "2.1"
     GNCWSV = "1.0"
-    GHCWSV = "1.0"
+    GHCWSV = "1.1"
     GHCWPS = "1.0"
 }
 $selected = [ordered]@{}

@@ -1,3 +1,9 @@
+# 2026.09.11
+
+- GHCWSV 1.1: shared-work `--sign both`, independent sign masks/factors, v2 sign-tagged snapshots, v1 compatibility, per-sign counts, and converter sign filtering.
+- Windows and WSL sm_89 correctness/interrupt tests passed; all four native targets built on both platforms.
+- Other seven components unchanged.
+
 # 2026.09.10
 
 - Add GHCWSV 1.0 and GHCWPS 1.0 for b^n*n^b±1.
