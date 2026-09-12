@@ -1,0 +1,26 @@
+[
+  {
+    "name": "release-GHCWPS-100k",
+    "wall_seconds": 5.462846434005769,
+    "exponentiation_seconds": 5.081644,
+    "checksum": "704260622:470682000"
+  },
+  {
+    "name": "release-GFPPS-100k",
+    "wall_seconds": 5.444594481996319,
+    "exponentiation_seconds": 5.200273,
+    "checksum": "957515883:395142974"
+  },
+  {
+    "name": "release-GSRPS-sameN",
+    "wall_seconds": 16.53164823500265,
+    "exponentiation_seconds": 16.107,
+    "checksum": "87860748:516889655"
+  },
+  {
+    "name": "release-GHCWPS-sameN",
+    "wall_seconds": 27.659627596003702,
+    "exponentiation_seconds": 27.370475,
+    "checksum": "87860748:516889655"
+  }
+]

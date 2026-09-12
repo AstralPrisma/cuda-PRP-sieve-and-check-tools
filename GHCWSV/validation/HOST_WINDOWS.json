@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "tests": [
+    "56 PRP CPU reference residues vs Python pow",
+    "malformed/crossed parameters rejected",
+    "checkpoint partial/resume, truncation, corruption, identity/witness checks",
+    "12 sieve families vs exact Python reference; resume byte-identical to fresh",
+    "sieve truncation, mismatched base/count, backwards boundary and output collision rejected"
+  ],
+  "gpu_used": false
+}

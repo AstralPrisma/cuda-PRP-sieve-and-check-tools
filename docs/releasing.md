@@ -6,7 +6,7 @@ to both Linux executables and Windows `.exe` files.
 
 ## Versioning
 
-The six tools have independent component versions:
+The eight tools have independent component versions:
 
 | Tool | Current component version |
 | --- | ---: |
@@ -16,6 +16,16 @@ The six tools have independent component versions:
 | GFNSV | 1.1 |
 | GSRSV | 2.1 |
 | GNCWSV | 1.0 |
+| GHCWSV | 1.0 |
+| GHCWPS | 1.0 |
+
+The v2026.09.10 release adds the two hyper-Cullen/Woodall tools. It publishes
+four new component/platform packages and a full tagged source archive. The
+six unchanged tools are linked to their v2026.09.9 packages, not represented
+as newly compiled. For selective packaging, pass `-Tools GHCWSV,GHCWPS`;
+the default full-matrix packager now expects all eight tools. Optional
+primesieve shared libraries must be separately recorded with hashes/licenses
+and installed under `bin/lib/` for the GHCWSV executable-relative loader.
 
 Use a suite tag such as `v2026.09.9` for a coordinated repository release and
 list all six component versions in its notes. Increment the final field for a

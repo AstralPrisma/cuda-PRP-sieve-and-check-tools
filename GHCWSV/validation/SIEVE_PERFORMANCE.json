@@ -1,0 +1,62 @@
+[
+  {
+    "name": "final-2-auto-0",
+    "wall_seconds": 3.505908860999625,
+    "candidates": 2000
+  },
+  {
+    "name": "final-2-direct-0",
+    "wall_seconds": 6.673016726999776,
+    "candidates": 2000
+  },
+  {
+    "name": "final-2-GNCWSV-0",
+    "wall_seconds": 2.474118416001147,
+    "candidates": 2000
+  },
+  {
+    "name": "final-2-auto-1",
+    "wall_seconds": 3.288156786999025,
+    "candidates": 2000
+  },
+  {
+    "name": "final-2-direct-1",
+    "wall_seconds": 6.538271468998573,
+    "candidates": 2000
+  },
+  {
+    "name": "final-2-GNCWSV-1",
+    "wall_seconds": 2.340689928998472,
+    "candidates": 2000
+  },
+  {
+    "name": "final-65537-auto-0",
+    "wall_seconds": 2.968570342003659,
+    "candidates": 1000
+  },
+  {
+    "name": "final-65537-direct-0",
+    "wall_seconds": 8.314645195001503,
+    "candidates": 1000
+  },
+  {
+    "name": "final-65537-GNCWSV-0",
+    "wall_seconds": 2.170980339004018,
+    "candidates": 1000
+  },
+  {
+    "name": "final-65537-auto-1",
+    "wall_seconds": 3.0069521449986496,
+    "candidates": 1000
+  },
+  {
+    "name": "final-65537-direct-1",
+    "wall_seconds": 8.546190572000341,
+    "candidates": 1000
+  },
+  {
+    "name": "final-65537-GNCWSV-1",
+    "wall_seconds": 2.251905996003188,
+    "candidates": 1000
+  }
+]

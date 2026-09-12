@@ -1,0 +1,14 @@
+[
+  {
+    "program": "GHCWPS",
+    "ctrl_c_exit": 130,
+    "checkpoint_sha256_valid": true,
+    "resume_ok": true
+  },
+  {
+    "program": "GHCWSV",
+    "ctrl_c_exit": 130,
+    "checkpoint_sha256_valid": true,
+    "resume_ok": true
+  }
+]

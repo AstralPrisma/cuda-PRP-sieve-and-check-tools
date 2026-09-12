@@ -14,7 +14,7 @@ as:
 Copyright (C) Mark Rodenkirch, 2018
 ```
 
-GNCWSV derives prime-generation and CUDA infrastructure from the same
+GNCWSV and GHCWSV derive prime-generation and CUDA infrastructure from the same
 mtsieve-based GSRSV implementation. These portions are distributed under the
 GNU General Public License, version 2 or later.
 
@@ -22,7 +22,7 @@ Upstream project: <https://github.com/primesearch/mtsieve>
 
 ## primesieve
 
-GSRSV and GNCWSV can optionally load the primesieve iterator API at runtime for
+GSRSV, GNCWSV and GHCWSV can optionally load the primesieve iterator API at runtime for
 prime generation. The programs also provide a built-in generator and do not
 require primesieve to start.
 
@@ -33,7 +33,7 @@ Upstream project: <https://github.com/kimwalisch/primesieve>
 
 ## Boost.Multiprecision
 
-GFPS, GSRPS, and GFPPS use Boost.Multiprecision headers for host-side exact-integer
+GFPS, GSRPS, GFPPS, GHCWSV and GHCWPS use Boost.Multiprecision headers for host-side exact-integer
 operations and verification paths. The Windows GFNSV build uses Boost's
 fixed-width unsigned 128-bit type for host-side arithmetic. Boost is distributed under the Boost
 Software License, version 1.0.
@@ -44,7 +44,7 @@ A copy is included at [`LICENSES/BSL-1.0.txt`](LICENSES/BSL-1.0.txt).
 
 ## CUB / NVIDIA CCCL
 
-GSRPS and GFPPS use CUB headers supplied with the CUDA toolkit. CUB is part of NVIDIA's
+GSRPS, GFPPS and GHCWPS use CUB headers supplied with the CUDA toolkit. CUB is part of NVIDIA's
 CUDA Core Compute Libraries (CCCL) and is distributed under the BSD 3-Clause
 license. Consult the exact CUDA/CCCL version used for a release for its bundled
 copyright and license notices.
@@ -56,7 +56,7 @@ Upstream project: <https://github.com/NVIDIA/cccl>
 
 ## NVIDIA CUDA Toolkit and runtime
 
-All six tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
+All eight tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
 and GPU to execute. The CUDA toolkit, headers, compiler, driver, and any
 redistributable runtime components remain subject to NVIDIA's licenses and EULA.
 They are not relicensed by this repository's GPL license.

@@ -1,3 +1,10 @@
+# 2026.09.10
+
+- Add GHCWSV 1.0 and GHCWPS 1.0 for b^n*n^b±1.
+- Wire user display banners with Windows UTF-8 support; sieve always prints, checker prints help/usage only.
+- Add Windows/Linux native sm_86/89/100/120 artifacts and offline/network task converter.
+- Other six tools and component versions unchanged.
+
 # Changelog
 
 ## v2026.09.9 - GFPPS 1.0 parallel NTT and exact carry optimization

@@ -1,9 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.9",
+    [string]$SuiteVersion = "v2026.09.10",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
-    [string]$BuildMetadataPath = ""
+    [string]$BuildMetadataPath = "",
+    [ValidateSet('GFPS','GSRPS','GFPPS','GFNSV','GSRSV','GNCWSV','GHCWSV','GHCWPS')]
+    [string[]]$Tools = @('GFPS','GSRPS','GFPPS','GFNSV','GSRSV','GNCWSV','GHCWSV','GHCWPS')
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +22,12 @@ $versions = [ordered]@{
     GFNSV = "1.1"
     GSRSV = "2.1"
     GNCWSV = "1.0"
+    GHCWSV = "1.0"
+    GHCWPS = "1.0"
 }
+$selected = [ordered]@{}
+foreach ($tool in $Tools) { $selected[$tool] = $versions[$tool] }
+$versions = $selected
 $utf8 = New-Object Text.UTF8Encoding($false)
 $metadataPath = if ($BuildMetadataPath) { [IO.Path]::GetFullPath($BuildMetadataPath) } else { Join-Path $rawPath "build-metadata.json" }
 if (-not [IO.File]::Exists($metadataPath)) {
@@ -76,6 +83,10 @@ function Get-SupportingFiles([string]$Tool) {
             if (-not [IO.File]::Exists($supportPath)) { throw "Missing supporting file: $Tool/$name" }
             $records[$name] = Get-Sha256 $supportPath
         }
+    }
+    if ($Tool -eq "GHCWSV") {
+        $name = "scripts/ghcw_to_cands.py"
+        $records[$name] = Get-Sha256 (Join-Path (Join-Path $repoDirectory $Tool) $name)
     }
     return $records
 }

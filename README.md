@@ -1,8 +1,10 @@
 # CUDA PRP: sieve and check tools
 
-This repository collects six CUDA programs for experimental large-integer
+This repository collects eight CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
+
+The [v2026.09.10 release](docs/releases/v2026.09.10.md) adds GHCWSV and GHCWPS for `b^n*n^b±1`. Four native GPU targets per platform are provided. The other six tools remain unchanged; their packages are linked from v2026.09.9.
 
 The [v2026.09.9 release](docs/releases/v2026.09.9.md) promotes GFPPS's parallel
 NTT and exact fused-carry path while retaining component version 1.0. For the
@@ -28,14 +30,16 @@ executables; GFPS's separate experimental optimization is not promoted.
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
 | [`GSRSV/`](GSRSV/) | 2.1 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
 | [`GNCWSV/`](GNCWSV/) | 1.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
+| [`GHCWSV/`](GHCWSV/) | 1.0 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
+| [`GHCWPS/`](GHCWPS/) | 1.0 | Checks the same family with NTT arithmetic and safe checkpoints. |
 
 ## 中文简介
 
-本仓库统一发布六个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
+本仓库统一发布八个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
 检查，GFNSV 用于广义费马数 GPU 筛选，GSRPS 用于广义 Sierpinski/Riesel
 数 PRP 检查，GFPPS 用于广义阶乘/素数阶乘数 PRP 检查，GSRSV 用于固定
 `b,n` 的 `k*b^n±1` 等数型筛选，GNCWSV 用于广义 Cullen/Woodall 与
-Near Cullen/Woodall 数型筛选。源码位于六个同名目录；预编译程序只在
+Near Cullen/Woodall 数型筛选。源码位于八个同名目录；预编译程序只在
 Releases 中发布。`PRP` 不是确定性素数证明，命中后仍须由独立程序复核。
 
 这里的 GFPS 指本仓库中的 generalized-Fermat CUDA checker；其他项目或
@@ -73,12 +77,12 @@ Release packages are separated by operating system. Each package contains the
 native CUDA architectures shown below; select the executable matching the
 target GPU.
 
-| CUDA target | GFPS | GSRPS | GFPPS | GFNSV | GSRSV | GNCWSV |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `sm_86` | yes | yes | yes | yes | yes | yes |
-| `sm_89` | yes | yes | yes | yes | yes | yes |
-| `sm_100` | yes | yes | yes | yes | yes | yes |
-| `sm_120` | yes | yes | yes | yes | yes | yes |
+| CUDA target | GFPS | GSRPS | GFPPS | GFNSV | GSRSV | GNCWSV | GHCWSV | GHCWPS |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `sm_86` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `sm_89` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `sm_100` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `sm_120` | yes | yes | yes | yes | yes | yes | yes | yes |
 
 Both Linux x86-64 ELF and Windows x64 PE executables are provided. Each file
 contains native cubins for the SM target in its filename. CUDA may also embed

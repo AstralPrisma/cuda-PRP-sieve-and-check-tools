@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "platform": "nt",
+  "tests": [
+    "GPU PRP small residues: 8 expressions x 3 witnesses",
+    "GPU-to-CPU and CPU-to-GPU checkpoint consistency",
+    "12 sieve families: auto GPU == direct GPU == CPU, including candidate==p",
+    "Precomputed-coefficient path matches direct GPU and CPU reference",
+    "High-p modular arithmetic up to 2^62: auto/direct versus independent Python reference"
+  ],
+  "gpu_used": true
+}
