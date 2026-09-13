@@ -1,0 +1,142 @@
+[
+  {
+    "name": "old-fresh",
+    "wall_s": 15.716050405000715,
+    "sieve_s": 15.5477,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 0
+  },
+  {
+    "name": "new-fresh",
+    "wall_s": 2.8196843140003693,
+    "sieve_s": 2.67124,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 7
+  },
+  {
+    "name": "new-fixed-fresh",
+    "wall_s": 11.573408299999755,
+    "sieve_s": 11.4126,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 0
+  },
+  {
+    "name": "new-fresh-repeat0",
+    "wall_s": 2.5918169540000235,
+    "sieve_s": 2.46186,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 7
+  },
+  {
+    "name": "old-fresh-repeat0",
+    "wall_s": 11.364688057999956,
+    "sieve_s": 11.1463,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 0
+  },
+  {
+    "name": "new-fresh-repeat1",
+    "wall_s": 2.5224459689998184,
+    "sieve_s": 2.38012,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 7
+  },
+  {
+    "name": "old-fresh-repeat1",
+    "wall_s": 11.621168199999374,
+    "sieve_s": 11.4386,
+    "n_values": 24572,
+    "survivors": 25096,
+    "p": 2000000,
+    "sha256": "32355d29f00295b57eb9bde7369d367da600e537d77ca14f0720accd85376333",
+    "rebuilds": 0
+  },
+  {
+    "name": "new-sparse0",
+    "wall_s": 1.631399486999726,
+    "sieve_s": 1.56192,
+    "n_values": 16313,
+    "survivors": 16530,
+    "p": 4058294571,
+    "sha256": "843c5b651d0c8c736dc6a3fd0ddd141f61420ac0578f42ae9835fe8e941dbff9",
+    "rebuilds": 0
+  },
+  {
+    "name": "old-sparse0",
+    "wall_s": 1.8219131010000638,
+    "sieve_s": 1.64463,
+    "n_values": 16313,
+    "survivors": 16530,
+    "p": 4058294571,
+    "sha256": "843c5b651d0c8c736dc6a3fd0ddd141f61420ac0578f42ae9835fe8e941dbff9",
+    "rebuilds": 0
+  },
+  {
+    "name": "new-sparse1",
+    "wall_s": 1.8326532199998837,
+    "sieve_s": 1.67945,
+    "n_values": 16313,
+    "survivors": 16530,
+    "p": 4058294571,
+    "sha256": "843c5b651d0c8c736dc6a3fd0ddd141f61420ac0578f42ae9835fe8e941dbff9",
+    "rebuilds": 0
+  },
+  {
+    "name": "old-sparse1",
+    "wall_s": 1.7473422809998738,
+    "sieve_s": 1.6457,
+    "n_values": 16313,
+    "survivors": 16530,
+    "p": 4058294571,
+    "sha256": "843c5b651d0c8c736dc6a3fd0ddd141f61420ac0578f42ae9835fe8e941dbff9",
+    "rebuilds": 0
+  },
+  {
+    "name": "interrupted",
+    "wall_s": 1.4993157150001934,
+    "sieve_s": 1.24688,
+    "n_values": 28028,
+    "survivors": 28736,
+    "p": 437201,
+    "sha256": "689849be1a8f6fa3655e1c27bf2577b927fbc97fd1b6470909f330e39e24c950",
+    "rebuilds": 6
+  },
+  {
+    "name": "resumed",
+    "wall_s": 7.106083808999756,
+    "sieve_s": 7.00313,
+    "n_values": 22247,
+    "survivors": 22681,
+    "p": 10000000,
+    "sha256": "9aeb837c9631dd2d2143c4b2b5d9a910862a911e7828addc02081b07a167682a",
+    "rebuilds": 1
+  },
+  {
+    "name": "uninterrupted",
+    "wall_s": 7.559675547000552,
+    "sieve_s": 7.41565,
+    "n_values": 22247,
+    "survivors": 22681,
+    "p": 10000000,
+    "sha256": "9aeb837c9631dd2d2143c4b2b5d9a910862a911e7828addc02081b07a167682a",
+    "rebuilds": 7
+  }
+]

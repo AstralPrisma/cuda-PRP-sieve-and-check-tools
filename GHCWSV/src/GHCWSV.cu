@@ -43,6 +43,7 @@
 #include "sha256.hpp"
 #include "ghcw_model.hpp"
 #include "console_utf8.hpp"
+#include "work_batching.hpp"
 
 namespace ghcw_sieve {
 constexpr uint64_t PMAX_MAX=(uint64_t(1)<<62)-1;
@@ -259,17 +260,18 @@ uint64_t number(const std::string& text) {
     return x;
 }
 struct Options {
-    std::string input,output,factors,algorithm="auto";uint64_t base=0,lo=0,hi=0,pmax=0;
+    std::string input,output,factors,algorithm="auto",work_batching="adaptive";uint64_t base=0,lo=0,hi=0,pmax=0;
     int sign=0,device=0,blocks=0,threads=128,prime_threads=8;
     uint64_t batch=8192,progress=1,checkpoint=60;bool cpu=false,verify=false,sign_given=false;
     PrimeMode prime_mode=PrimeMode::Auto;
 };
-void help(){std::cout<<"GHCWSV 1.1 CUDA - Generalized Hyper-Cullen / Woodall Siever\n"
+void help(){std::cout<<"GHCWSV 1.2 CUDA - Generalized Hyper-Cullen / Woodall Siever\n"
  <<"Generate: GHCWSV -b B -n NMIN -N NMAX --sign +1|-1|both -P PMAX -o FILE\n"
  <<"Resume:   GHCWSV -i FILE -P PMAX -o FILE\n"
  <<"Ranges inclusive; candidates are b^n*n^b+/-1; b,n in [2,2^32-1].\n"
  <<"--algorithm auto|direct|transform --prime-generator auto|primesieve|segmented|mr\n"
  <<"--prime-threads 1..16 --batch-primes N --device N --blocks N --threads N\n"
+ <<"--work-batching adaptive|fixed (adaptive; rebuild after 20% fewer n values)\n"
  <<"--progress-seconds N (1) --checkpoint-seconds N (60) --verify\n"
  <<"-O FACTORS (optional) --cpu-reference (small tests, no CUDA calls)\n"
  <<"--selftest runs bounded GPU arithmetic tests.\n"
@@ -283,6 +285,7 @@ Options parse(int argc,char** argv){Options o;
     else if(a=="-P"||a=="--pmax")o.pmax=number(next());
     else if(a=="-i")o.input=next();else if(a=="-o")o.output=next();else if(a=="-O")o.factors=next();
     else if(a=="--algorithm")o.algorithm=next();
+    else if(a=="--work-batching")o.work_batching=next();
     else if(a=="--cpu-reference")o.cpu=true;else if(a=="--verify")o.verify=true;
     else if(a=="--prime-generator"){auto s=next();if(s=="auto")o.prime_mode=PrimeMode::Auto;
         else if(s=="primesieve")o.prime_mode=PrimeMode::PrimeSieve;else if(s=="segmented")o.prime_mode=PrimeMode::Segmented;
@@ -296,7 +299,8 @@ Options parse(int argc,char** argv){Options o;
     else fail("unknown option: "+a);
  }
  if(o.output.empty() || o.pmax<2 || o.pmax>PMAX_MAX || !o.progress || !o.checkpoint)fail("output, pmax and positive report/checkpoint intervals required");
- if(o.algorithm!="auto" && o.algorithm!="direct" && o.algorithm!="transform")fail("algorithm must be auto, direct or transform");return o;
+ if(o.algorithm!="auto" && o.algorithm!="direct" && o.algorithm!="transform")fail("algorithm must be auto, direct or transform");
+ if(o.work_batching!="adaptive" && o.work_batching!="fixed")fail("work-batching must be adaptive or fixed");return o;
 }
 Queue load(const Options& o){Queue q;
  if(!o.input.empty()){
@@ -321,7 +325,7 @@ Queue load(const Options& o){Queue q;
 template<class T>struct Device {T* p=nullptr;~Device(){if(p)cudaFree(p);}void alloc(size_t n){CUDA_CHECK(cudaMalloc(&p,n*sizeof(T)));}};
 int run(int argc,char** argv){
  if(argc==1){help();return 0;}if(argc==2 && std::string(argv[1])=="--selftest")return selftest();
- if(argc==2 && std::string(argv[1])=="--version"){std::cout<<"GHCWSV 1.1\n";return 0;}
+ if(argc==2 && std::string(argv[1])=="--version"){std::cout<<"GHCWSV 1.2\n";return 0;}
  for(int i=1;i<argc;++i)if(std::string(argv[i])=="--help" || std::string(argv[i])=="-h"){help();return 0;}
  auto o=parse(argc,argv);auto q=load(o);auto output=std::filesystem::u8path(o.output);
  if(!o.factors.empty()) {
@@ -336,16 +340,27 @@ int run(int argc,char** argv){
  std::ofstream factors;if(!o.factors.empty()){factors.open(std::filesystem::u8path(o.factors),std::ios::app);if(!factors)fail("cannot open factors output");}
  auto save=[&](){atomic_text(output,serialize(q));auto counts=q.sign_counts();std::cout<<"checkpoint: sieved_to="<<q.p<<", survivors="<<counts.first+counts.second<<", plus="<<counts.first<<", minus="<<counts.second<<", file="<<o.output<<"\n";};
  save();if(q.ns.empty()||q.p==o.pmax)return 0;
- std::cout<<"GHCWSV 1.1: b="<<q.b<<", sign="<<(q.c==0?"both":q.c==1?"+1":"-1")<<", candidates="<<initial<<", n_values="<<q.ns.size()<<", p in ("<<q.p<<","<<o.pmax<<"]\n";
+ std::cout<<"GHCWSV 1.2: b="<<q.b<<", sign="<<(q.c==0?"both":q.c==1?"+1":"-1")<<", candidates="<<initial<<", n_values="<<q.ns.size()<<", p in ("<<q.p<<","<<o.pmax<<"]\n";
  const auto started=std::chrono::steady_clock::now();auto last_progress=started,last_save=started;
- uint64_t prime_count=0;double gpu_seconds=0,wait_seconds=0;
+  uint64_t prime_count=0,gpu_batches=0;double gpu_seconds=0,wait_seconds=0,accept_seconds=0;
+  struct RateSample {double seconds;uint64_t primes,p;};
+  std::deque<RateSample> rate_samples{{0,0,start_p}};
  auto report=[&](bool force){auto now=std::chrono::steady_clock::now();double elapsed=std::chrono::duration<double>(now-started).count();
     if(force||std::chrono::duration<double>(now-last_progress).count()>=o.progress){
-       double fraction=o.pmax>start_p?double(q.p-start_p)/double(o.pmax-start_p):1;
+        while(rate_samples.size()>1 && elapsed-rate_samples[1].seconds>=30)rate_samples.pop_front();
+        const auto recent=rate_samples.front();const double span=elapsed-recent.seconds;
+        const double recent_rate=span>0?double(prime_count-recent.primes)/span:0;
+        const double p_rate=span>0?double(q.p-recent.p)/span:0;
+        rate_samples.push_back({elapsed,prime_count,q.p});
        auto counts=q.sign_counts();size_t survivors=counts.first+counts.second;
        std::cout<<"progress: p="<<q.p<<", survivors="<<survivors<<", plus="<<counts.first<<", minus="<<counts.second<<", removed="<<initial-survivors
-       <<", primes_per_s="<<(elapsed?prime_count/elapsed:0)<<", elapsed_s="<<elapsed
-       <<", eta_s="<<(fraction>0?elapsed*(1-fraction)/fraction:0)<<"\n";last_progress=now;}
+       <<", primes_per_s="<<(elapsed?prime_count/elapsed:0)
+       <<", recent_primes_per_s="<<recent_rate<<", p_per_s="<<p_rate<<", rate_window_s="<<span<<", elapsed_s="<<elapsed
+       <<", eta_s=";
+       if(q.ns.empty()||q.p==o.pmax)std::cout<<0;
+       else if(p_rate>0)std::cout<<double(o.pmax-q.p)/p_rate;
+       else std::cout<<"n/a";
+       std::cout<<"\n";last_progress=now;}
     if(std::chrono::duration<double>(now-last_save).count()>=o.checkpoint){save();last_save=now;}
  };
  auto accept=[&](const std::vector<uint32_t>& alive,const std::vector<uint64_t>& fs){
@@ -377,14 +392,24 @@ int run(int argc,char** argv){
  }else{
     CUDA_CHECK(cudaSetDevice(o.device));cudaDeviceProp prop{};CUDA_CHECK(cudaGetDeviceProperties(&prop,o.device));
     std::cout<<"CUDA device: "<<prop.name<<", algorithm="<<o.algorithm<<", fallback=direct, prime_threads="<<o.prime_threads<<"\n";
-    constexpr size_t term_budget=2000000;
-    const uint64_t effective_batch=std::min(o.batch,std::max(uint64_t(1),uint64_t(term_budget/initial_ns)));
-    std::cout<<"work-batching: primes="<<effective_batch<<", candidate_tile=256, n_values_per_kernel<="<<term_budget<<"\n";
-    Device<uint64_t> dp,df,dc;Device<uint32_t> dn,da;dp.alloc(effective_batch);dn.alloc(initial_ns);da.alloc(initial_ns);df.alloc(2*initial_ns);dc.alloc(initial_ns);
-    PrimeStream stream(q.p,o.pmax,effective_batch,o.prime_mode,100000000,8,o.prime_threads,12,4,1,false);
+    constexpr size_t term_budget=ghcw_work::Batching::term_budget;
+    ghcw_work::Batching sizing(o.batch,initial_ns,o.work_batching=="adaptive");
+    const uint64_t producer_batch=sizing.producer_batch();
+    std::cout<<"work-batching: primes="<<sizing.selected()<<", mode="<<o.work_batching
+             <<", producer_primes="<<producer_batch<<", candidate_tile=256, pairs_per_kernel<="<<term_budget<<"\n";
+    Device<uint64_t> dp,df,dc;Device<uint32_t> dn,da;dp.alloc(producer_batch);dn.alloc(initial_ns);da.alloc(initial_ns);df.alloc(2*initial_ns);dc.alloc(initial_ns);
+    PrimeStream stream(q.p,o.pmax,producer_batch,o.prime_mode,100000000,8,o.prime_threads,12,4,1,false);
     PrimeBatchPipeline pipeline(stream,4);std::cout<<"Prime generator: "<<stream.description()<<"\n";
-    PrimeBatch batch;
-    while(!g_interrupted&&!q.ns.empty()&&pipeline.next(batch,wait_seconds)){
+    PrimeBatch produced;
+    while(!g_interrupted&&!q.ns.empty()&&pipeline.next(produced,wait_seconds)){
+      size_t cursor=0;
+      while(cursor<produced.count&&!g_interrupted&&!q.ns.empty()){
+       if(sizing.refresh(q.ns.size()))
+           std::cout<<"workset-rebuild: p="<<q.p<<", n_values="<<q.ns.size()
+                    <<", gpu_primes="<<sizing.selected()<<", producer_primes="<<producer_batch<<"\n";
+       PrimeBatch batch=produced;
+       batch.data=produced.data+cursor;
+       batch.count=ghcw_work::next_chunk(produced.count,cursor,sizing.selected());
        auto begin=std::chrono::steady_clock::now();size_t count=q.ns.size();
        CUDA_CHECK(cudaMemcpy(dn.p,q.ns.data(),count*4,cudaMemcpyHostToDevice));
        std::vector<uint32_t> alive=q.masks;std::vector<uint64_t> fs(2*count);
@@ -419,13 +444,19 @@ int run(int argc,char** argv){
        CUDA_CHECK(cudaMemcpy(alive.data(),da.p,count*4,cudaMemcpyDeviceToHost));
        CUDA_CHECK(cudaMemcpy(fs.data(),df.p,count*16,cudaMemcpyDeviceToHost));
        gpu_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
-       accept(alive,fs);q.p=batch.last();prime_count+=batch.count;report(false);
+       const auto accept_start=std::chrono::steady_clock::now();
+       accept(alive,fs);accept_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-accept_start).count();
+       // Commit only this fully completed chunk. The producer's remaining tail
+       // stays owned by 'produced', including across workset resize/checkpoint.
+       q.p=batch.last();prime_count+=batch.count;++gpu_batches;cursor+=batch.count;report(false);
+      }
     }
  }
  if(!g_interrupted)q.p=o.pmax;
  save();report(true);
  auto counts=q.sign_counts();std::cout<<"done: primes="<<prime_count<<", survivors="<<counts.first+counts.second<<", plus="<<counts.first<<", minus="<<counts.second<<", producer_wait_s="<<wait_seconds
- <<", gpu_batch_wall_s="<<gpu_seconds<<", result="<<(g_interrupted?"INTERRUPTED":"COMPLETE")<<"\n";
+ <<", gpu_batch_wall_s="<<gpu_seconds<<", host_accept_s="<<accept_seconds<<", gpu_batches="<<gpu_batches
+ <<", result="<<(g_interrupted?"INTERRUPTED":"COMPLETE")<<"\n";
  return g_interrupted?130:0;
 }
 }
@@ -441,7 +472,7 @@ void display_banner() {
     printf("%s\n","       `Y8bood8P'   Y8P o888o   o888o Y8P  `Y8bood8P'  Y8P     `8'      `8'     Y8P 8''88888P'  Y8P     `8'     Y8P      ");
     printf("%s\n","\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90");
     printf("%s\n","                                        Generalized Hyper Cullen / Woodall Siever                                        ");
-    printf("%s\n","                                            Version 1.1 CUDA by A.P. Sep 2026                                            ");
+    printf("%s\n","                                            Version 1.2 CUDA by A.P. Sep 2026                                            ");
 }
 
 int main(int argc,char** argv){prp_console::initialize_utf8_output();std::cout.setf(std::ios::unitbuf);

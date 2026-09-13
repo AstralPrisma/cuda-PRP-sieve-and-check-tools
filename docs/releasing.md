@@ -16,8 +16,13 @@ The eight tools have independent component versions:
 | GFNSV | 1.1 |
 | GSRSV | 2.1 |
 | GNCWSV | 1.0 |
-| GHCWSV | 1.1 |
+| GHCWSV | 1.2 |
 | GHCWPS | 1.0 |
+
+The v2026.09.12 release updates only GHCWSV to 1.2. It publishes two new
+component/platform packages (four native targets each), a full tagged source
+archive, and checksums/provenance. The seven other components retain their
+previously published artifacts. Use `-Tools GHCWSV` for selective packaging.
 
 The v2026.09.10 release adds the two hyper-Cullen/Woodall tools. It publishes
 four new component/platform packages and a full tagged source archive. The

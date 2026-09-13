@@ -1,3 +1,10 @@
+# 2026.09.12
+
+- GHCWSV 1.2 adapts GNCWSV's 20%-smaller workset trigger to refresh GPU prime batches, while a separate producer batch preserves every unprocessed tail.
+- Keeps the arithmetic kernel and v1/v2 snapshot formats unchanged; adds a fixed scheduling reference, recent throughput, p-boundary throughput and recent-window ETA.
+- Bounded fresh-range RTX4060 Laptop measurements improve by about 4.5x including process overhead. Already sparse continuation shows no clear speedup.
+- Eight native builds checked; GPU arithmetic, independent oracle comparisons, multi-launch worksets and real interrupt/resume checked on sm_89. Other seven components unchanged.
+
 # 2026.09.11
 
 - GHCWSV 1.1: shared-work `--sign both`, independent sign masks/factors, v2 sign-tagged snapshots, v1 compatibility, per-sign counts, and converter sign filtering.

@@ -4,6 +4,8 @@ This repository collects eight CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
+The [v2026.09.12 release](docs/releases/v2026.09.12.md) updates GHCWSV to 1.2: adaptive GPU batches after candidate compaction, independent prime-producer batches, and explicit recent throughput. The bounded fresh-range RTX4060 Laptop test is about 4.5x faster; already sparse continuation has no clear speedup. Other seven tools are unchanged.
+
 The [v2026.09.11 release](docs/releases/v2026.09.11.md) adds `--sign both` to GHCWSV 1.1, including sign-preserving checkpoints and conversion. Other seven tools are unchanged.
 
 The [v2026.09.10 release](docs/releases/v2026.09.10.md) adds GHCWSV and GHCWPS for `b^n*n^b±1`. Four native GPU targets per platform are provided. The other six tools remain unchanged; their packages are linked from v2026.09.9.
@@ -32,7 +34,7 @@ executables; GFPS's separate experimental optimization is not promoted.
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
 | [`GSRSV/`](GSRSV/) | 2.1 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
 | [`GNCWSV/`](GNCWSV/) | 1.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
-| [`GHCWSV/`](GHCWSV/) | 1.1 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
+| [`GHCWSV/`](GHCWSV/) | 1.2 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
 | [`GHCWPS/`](GHCWPS/) | 1.0 | Checks the same family with NTT arithmetic and safe checkpoints. |
 
 ## 中文简介

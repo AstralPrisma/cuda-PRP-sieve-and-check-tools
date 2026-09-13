@@ -1,0 +1,7 @@
+{
+  "platform": "linux",
+  "arch": 89,
+  "gpu": true,
+  "commands": 55,
+  "result": "PASS"
+}

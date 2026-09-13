@@ -1,9 +1,21 @@
-# GHCWSV 1.1
+# GHCWSV 1.2
 
 Generalized Hyper-Cullen / Woodall Siever, by A.P., Sept 2026.
 
 固定 b，扫描 n，筛选
 `b^n*n^b+1`、`b^n*n^b-1`，或使用 `--sign both` 同时筛选两者。一个文件固定一个 b，包含单个符号或两种符号的剩余候选。
+
+## 1.2：动态工作集调度
+
+借鉴 GNCWSV 的紧凑工作集重建策略：不同 n 的数量比上次调度基准减少至少20%后，在已完成且因子验证通过的 GPU 批次边界重新计算批量。质数生成使用独立的大批次，GPU逐段消费，保留未处理的尾部；不会通过重启生成器或跳过质数来加速。筛选数学、双符号掩码以及v1/v2检查点格式不变，已有文件可直接续筛。
+
+- 默认 `--work-batching adaptive`；`--work-batching fixed` 保留1.1的固定批量策略作为对照。
+- `workset-rebuild` 显示当前不同n数量和新的GPU质数批量。
+- `primes_per_s` 仍为本次启动以来的平均值，保持原字段语义；`recent_primes_per_s` 为近期窗口实际质数吞吐，`p_per_s` 为边界p的推进速度，`rate_window_s` 为窗口长度。
+- ETA使用约30秒的近期边界推进速度估算，启动时窗口较短；质数密度及候选变化仍会影响预测，不能当作精确完成时间。
+- `gpu_batch_wall_s` 包括批次内CPU准备、CUDA传输和同步，**不是纯核函数时间**；新增 `host_accept_s` 及 `gpu_batches` 辅助诊断。
+
+这项更新主要消除从密集候选开始时的调度滞后；本来已经稀疏的续筛不保证提速。它不把 GHCW 数学变成 GFNSV 的模根筛法。
 
 ```sh
 ./GHCWSV -b 7 -n 2 -N 100000 --sign +1 -P 1e8 -o hc7_plus.txt
@@ -51,7 +63,7 @@ ABC 7^$a*$a^7$b // GHCWSV v2 sieved_to=100000000 count=...
 - 输出使用原子替换，并保留上一份 `.previous`。恢复只需候选文件，不需因子文件。
 - `-O factors.txt` 可选保存因子；不能与候选输入/输出共用路径。
 - `--prime-threads N` 限1～16，默认8；`--batch-primes N` 上限默认8192。
-  实际批量随不同 n 的数量缩小，n 按256个一组并行，每次核函数至多计算200万个 `(p,n)` 对；both 模式从每个模积检查两种符号。
+  生成批量和GPU工作批量分离；不同 n 减少后默认动态增大GPU质数批量，n 按256个一组并行，每次核函数至多计算200万个 `(p,n)` 对；both 模式从每个模积检查两种符号。
 - Linux 优先加载程序旁 `lib/libprimesieve.so.12`；仅接受匹配的12.x迭代器。
   若无兼容库，auto 使用内建分段筛。Windows 可提供12.x的 primesieve.dll。
 - `--cpu-reference` 是小规模参考测试模式，不调用 CUDA；不是日常性能模式。
@@ -81,6 +93,8 @@ python scripts/ghcw_to_cands.py hc7_both.txt --out-dir minus_only --sign=-1
 转换器支持 v1/v2，默认导出文件中全部符号；`--sign=+1/-1` 可只导出一侧。文件名的 S/R 后缀与表达式逐项对应，不会覆盖同一个 n 的另一符号。
 
 ## 构建与验证
+
+1.2 的更新验证、性能对照和限制见 `VALIDATION_1.2.md`，原始报告在 `validation/adaptive-1.2/`。Windows/Linux各四个原生目标发布于仓库的 v2026.09.12 Release；实际GPU验证限本机 sm_89。下面的1.1记录作为历史验证范围保留。
 
 附带 Windows 和 Ubuntu22.04+ x86-64 原生程序，各平台分别提供 sm_86、sm_89、sm_100、sm_120 四个文件。
 1.1 的八个原生构建均检查目标架构、UTF-8、help/version及CPU参考路径。Windows和WSL的 sm_89 构建在同一台 RTX4060 Laptop 上完成双符号GPU对照和中断续筛测试；其他架构仅交叉编译，未实机验证。构建使用 CUDA13.3；驱动仍须支持目标 GPU。

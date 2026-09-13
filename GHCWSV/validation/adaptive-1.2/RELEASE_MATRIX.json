@@ -1,0 +1,58 @@
+[
+  {
+    "platform": "windows",
+    "arch": 86,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "windows",
+    "arch": 89,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "windows",
+    "arch": 100,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "windows",
+    "arch": 120,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "linux",
+    "arch": 86,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "linux",
+    "arch": 89,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "linux",
+    "arch": 100,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  },
+  {
+    "platform": "linux",
+    "arch": 120,
+    "gpu": false,
+    "commands": 34,
+    "result": "PASS"
+  }
+]
