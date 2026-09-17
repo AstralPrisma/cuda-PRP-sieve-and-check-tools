@@ -10,7 +10,7 @@
        a*b^(a+1)-1, a*b^(a-1)-1, a*b^(a+1)+1, a*b^(a-1)+1.
 
    Prime generation / CUDA infrastructure is derived from the GPLv2-or-later
-   GSRSV/mtsieve-based implementation.  The recurrence used for varying
+   GPRSV/mtsieve-based implementation.  The recurrence used for varying
    exponents follows the standard Generalized Cullen/Woodall sieve idea:
    test (-c)*b^(-e) == a (mod p) and update powers by fixed exponent gaps.
 
@@ -715,7 +715,7 @@ static std::vector<uint32_t> segmented_base_primes(uint32_t limit, uint32_t segm
 }
 
 // Optional runtime bridge to the same highly optimized primesieve iterator used
-// by mtsieve.  It is loaded dynamically so GSRSV remains one .cu source file
+// by mtsieve.  It is loaded dynamically so GPRSV remains one .cu source file
 // and still compiles without primesieve headers or link flags.
 struct PrimeSieveIteratorAbi {
     size_t i;

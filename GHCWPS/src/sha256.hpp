@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 AstralPrisma (A.P.).
-// SHA-256 implementation reused from GSRPS 2.3.
+// SHA-256 implementation reused from GPRPS 2.3.
 #pragma once
 #include <array>
 #include <cstring>

@@ -6,7 +6,7 @@ texts.
 
 ## mtsieve / twinsieve
 
-GSRSV is a CUDA port/reimplementation derived from the GPLv2-or-later mtsieve
+GPRSV is a CUDA port/reimplementation derived from the GPLv2-or-later mtsieve
 twinsieve code. Its source records the original CPU TwinApp/TwinWorker copyright
 as:
 
@@ -15,14 +15,14 @@ Copyright (C) Mark Rodenkirch, 2018
 ```
 
 GNCWSV and GHCWSV derive prime-generation and CUDA infrastructure from the same
-mtsieve-based GSRSV implementation. These portions are distributed under the
+mtsieve-based GPRSV implementation. These portions are distributed under the
 GNU General Public License, version 2 or later.
 
 Upstream project: <https://github.com/primesearch/mtsieve>
 
 ## primesieve
 
-GSRSV, GNCWSV and GHCWSV can optionally load the primesieve iterator API at runtime for
+GPRSV, GNCWSV and GHCWSV can optionally load the primesieve iterator API at runtime for
 prime generation. The programs also provide a built-in generator and do not
 require primesieve to start.
 
@@ -33,7 +33,7 @@ Upstream project: <https://github.com/kimwalisch/primesieve>
 
 ## Boost.Multiprecision
 
-GFPS, GSRPS, GFPPS, GHCWSV and GHCWPS use Boost.Multiprecision headers for host-side exact-integer
+GFPS, GPRPS, GFPPS, GHCWSV and GHCWPS use Boost.Multiprecision headers for host-side exact-integer
 operations and verification paths. The Windows GFNSV build uses Boost's
 fixed-width unsigned 128-bit type for host-side arithmetic. Boost is distributed under the Boost
 Software License, version 1.0.
@@ -44,7 +44,7 @@ A copy is included at [`LICENSES/BSL-1.0.txt`](LICENSES/BSL-1.0.txt).
 
 ## CUB / NVIDIA CCCL
 
-GSRPS, GFPPS and GHCWPS use CUB headers supplied with the CUDA toolkit. CUB is part of NVIDIA's
+GPRPS, GFPPS and GHCWPS use CUB headers supplied with the CUDA toolkit. CUB is part of NVIDIA's
 CUDA Core Compute Libraries (CCCL) and is distributed under the BSD 3-Clause
 license. Consult the exact CUDA/CCCL version used for a release for its bundled
 copyright and license notices.
@@ -75,7 +75,7 @@ authors.
 - PRST: <https://github.com/AenBleidd/rebirther-prst>
 - llrCUDA mirror: <https://github.com/primesearch/llrCUDA>
 
-GFPS, GSRPS, GFPPS, and GFNSV contain self-contained SHA-256 implementations used to
+GFPS, GPRPS, GFPPS, and GFNSV contain self-contained SHA-256 implementations used to
 authenticate checkpoint metadata and records. They implement the standardized SHA-256
 algorithm; a cryptographic standard is not itself a substitute for a primality
 certificate.

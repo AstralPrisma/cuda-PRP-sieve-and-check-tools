@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded CPU-only GSRSV output oracle. Never runs GSRSV, CUDA, or networking.
+"""Bounded CPU-only GPRSV output oracle. Never runs GPRSV, CUDA, or networking.
 
 Default CLI only reads input files and writes JSON to stdout. Optional --report
 may create a NEW report strictly inside this audit directory. Native source,
@@ -97,8 +97,8 @@ class Spec:
         if self.family == "factorial":
             value = math.factorial(self.n)
         elif self.family == "primorial":
-            # Actual GSRSV requires n itself to be prime (GFPPS need not).
-            require(prime64(self.n), "GSRSV primorial index n must itself be prime")
+            # Actual GPRSV requires n itself to be prime (GFPPS need not).
+            require(prime64(self.n), "GPRSV primorial index n must itself be prime")
             value = math.prod(small_primes(self.n))
         else:
             require(self.family == "bn" and 2 <= self.base <= 1 << 31, "invalid b^n definition")
@@ -197,9 +197,9 @@ def parse_terms(path: Path, fallback: tuple[Spec, str] | None = None) -> Terms:
             exponent = fallback[0].n
         spec = Spec("bn", exponent, base)
     else:
-        raise ValueError("unsupported GSRSV candidate header")
+        raise ValueError("unsupported GPRSV candidate header")
     require(1 <= boundary <= PMAX, "invalid sieve frontier")
-    require(all(1 <= k <= KMAX for k, _ in units), "candidate k outside GSRSV bounds")
+    require(all(1 <= k <= KMAX for k, _ in units), "candidate k outside GPRSV bounds")
     return Terms(spec, mode, units, boundary, fmt)
 
 
@@ -218,7 +218,7 @@ def generated(spec: Spec, mode: str, low: int, high: int, remove_base=False) -> 
 
 def expected_survivors(spec: Spec, mode: str, initial: set[tuple[int, int]], low: int, high: int,
                        *, source_frontier=1, declared_max_k: int | None = None) -> tuple[Terms, dict]:
-    require(initial, "empty initial input is not resumable in GSRSV")
+    require(initial, "empty initial input is not resumable in GPRSV")
     require(len(initial) <= MAX_ROWS, "too many initial units")
     require(all(c == 0 if mode == "twin" else c in (-1, 1) for _, c in initial), "candidate signs disagree with mode")
     if spec.family == "bn" and (spec.base == 2 or spec.base % 2):
@@ -267,7 +267,7 @@ def factor_records(path: Path, spec: Spec) -> list[tuple[int, int, int]]:
         prime, k, mult, sign = match.groups()
         require(parse_multiplier(mult) == spec, f"factor multiplier mismatch line {index}")
         prime, k, c = int(prime), int(k), 1 if sign == "+" else -1
-        require(2 <= prime <= PMAX and 1 <= k <= KMAX, "factor values outside GSRSV domain")
+        require(2 <= prime <= PMAX and 1 <= k <= KMAX, "factor values outside GPRSV domain")
         records.append((prime, k, c))
         require(len(records) <= MAX_ROWS, "too many factor records for bounded oracle")
     return records
@@ -322,7 +322,7 @@ def check_command(args):
         require((original.spec, original.mode) == (spec, mode), "input header overrides CLI definition; provide its actual type/n/mode")
         initial = original.units
         frontier = original.sieved_to or 1
-        require(initial, "empty survivor file is not resumable by current GSRSV")
+        require(initial, "empty survivor file is not resumable by current GPRSV")
         max_k = max(k for k, _ in initial)  # Native resume derives bitmap bounds before -r filtering.
         if args.remove and spec.family == "bn" and spec.base != 2:
             initial = {(k,c) for k,c in initial if k % spec.base}
@@ -393,7 +393,7 @@ def plan_command():
                 "-p",str(case["pmin"]),"-P",str(case["pmax"]),"-f","A","--prime-generator",case["prime_generator"]]
         if case["mode"] == "independent":
             argv += ["-s"]
-        case["gsrsv_arguments"] = argv + common + ["-o",case["label"]+".pfgw","-O",case["label"]+".factors.txt"]
+        case["gprsv_arguments"] = argv + common + ["-o",case["label"]+".pfgw","-O",case["label"]+".factors.txt"]
     return {"status":"PLAN_ONLY_NO_GPU_RUNS", "cases":cases,
             "repeat_controls":{"cuda_streams":[1,2],"prime_threads":[1,2],"format_twin":["A","D"],
                                "cpu_small_prime_compare":[0,100000]},

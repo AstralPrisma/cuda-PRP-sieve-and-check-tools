@@ -1,4 +1,4 @@
-# GSRSV 2.1 product-path validation
+# GPRSV 2.1 product-path validation
 
 Validated on an NVIDIA RTX 4060 Laptop GPU (sm_89), CUDA 13.3, Windows and
 Ubuntu 24.04 under WSL. Other shipped SM targets are cross-compiled; no runtime

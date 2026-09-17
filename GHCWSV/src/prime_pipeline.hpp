@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Derived from GNCWSV / GSRSV; A.P. 2026; original mtsieve authors retained in LICENSE.
+// Derived from GNCWSV / GPRSV; A.P. 2026; original mtsieve authors retained in LICENSE.
 static uint64_t mul_mod_host(uint64_t a, uint64_t b, uint64_t m) {
 #if defined(_MSC_VER) && defined(_M_X64)
     uint64_t hi = 0;
@@ -118,7 +118,7 @@ static std::vector<uint32_t> segmented_base_primes(uint32_t limit, uint32_t segm
 }
 
 // Optional runtime bridge to the same highly optimized primesieve iterator used
-// by mtsieve.  It is loaded dynamically so GSRSV remains one .cu source file
+// by mtsieve.  It is loaded dynamically so GPRSV remains one .cu source file
 // and still compiles without primesieve headers or link flags.
 struct PrimeSieveIteratorAbi {
     size_t i;

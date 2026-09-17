@@ -1,8 +1,8 @@
 # September 2026 local validation
 
-This record covers the GFPS 4.1/4.4 and GSRPS 2.3 arithmetic promotions,
+This record covers the GFPS 4.1/4.4 and GPRPS 2.3 arithmetic promotions,
 GFPPS 1.0 and its September 9 optimization, the GFNSV CUDA 1.0/1.1 sieve, and
-GSRSV 2.1. It describes tested cases, not a guarantee that every
+GPRSV 2.1. It describes tested cases, not a guarantee that every
 parameter, device, or hardware execution is free of defects.
 
 ## Hardware and build coverage
@@ -51,15 +51,15 @@ Only GFPPS's eight binaries are rebuilt for this suite release. The other
 forty executables are reused from v2026.09.8 with unchanged source/header hashes
 and original provenance. GFPS's separate 5090 optimization is not promoted.
 
-## GSRSV 2.1 factorial/primorial optimization (v2026.09.8)
+## GPRSV 2.1 factorial/primorial optimization (v2026.09.8)
 
 The packed-product kernel avoids repeated chunk remainders and Montgomery-domain
 conversion, using a proved pre-seed scaling invariant and exact low-word carry.
 Full conditions, independent oracle/inverse tests, Windows/Linux comparisons,
 and interruption/old-version continuation results are documented in
-[GSRSV validation](../GSRSV/VALIDATION_v2.1.md).
+[GPRSV validation](../GPRSV/VALIDATION_v2.1.md).
 
-Only the eight GSRSV binaries are rebuilt for this suite release. The other
+Only the eight GPRSV binaries are rebuilt for this suite release. The other
 forty executable files are reused from v2026.09.7 after checking source/header
 and binary hashes; their historical compiler/runtime evidence is retained.
 
@@ -135,11 +135,11 @@ any additional exact-binary GPU smoke-test evidence, separate from the earlier
 numerical validation recorded below.
 
 Separately, all six rebuilt `sm_89` executables passed short GPU smoke
-regressions on both Windows and Linux. These cover GFPS/GSRPS selftests,
+regressions on both Windows and Linux. These cover GFPS/GPRPS selftests,
 GFPPS cpp_int-verified factorial/primorial PRP and composite cases plus
 checkpoint continuation, and verified sieves. Independent Python-integer
 oracles matched the small survivor sets on both platforms: GFNSV 9 bases,
-GSRSV 0 paired terms, and GNCWSV 6 terms. The GFPPS test's final Windows and
+GPRSV 0 paired terms, and GNCWSV 6 terms. The GFPPS test's final Windows and
 Linux checkpoint files were byte-identical. This output-only rebuild did not
 repeat the earlier full-length million-digit PRP runs.
 
@@ -234,7 +234,7 @@ The faster path is the default. Use `--reference-mode` or `--batch-bits 0` for
 additional comparisons. These carry-convergence checks are not a Gerbicz proof
 or a general detector of all possible hardware faults.
 
-## GSRPS 2.3
+## GPRPS 2.3
 
 Prefixes and bidirectional Windows/Linux checkpoint resumes matched for bases
 32500, 1337, and 799. Small independent integer models, boundary cases,

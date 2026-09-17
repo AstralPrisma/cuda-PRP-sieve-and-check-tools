@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 AstralPrisma (A.P.)
-// Integer two-prime NTT backend, derived from GSRPS 2.3.
+// Integer two-prime NTT backend, derived from GPRPS 2.3.
 #pragma once
 #include <cuda_runtime.h>
 #include <algorithm>

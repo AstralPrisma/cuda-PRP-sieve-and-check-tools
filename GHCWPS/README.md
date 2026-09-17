@@ -26,7 +26,7 @@ Windows 使用 `GHCWPS.exe`，表达式用双引号。`b,n` 均为十进制整�
 与筛法配合时，使用 GHCWSV 目录中的 `ghcw_to_cands.py` 生成独立表达式文件。
 Prime Seeker 网络项目使用独立 GHCWPS 任务格式，见统一客户端文档。
 
-算术代码来自 GFPPS / GSRPS，保留 GPL-2.0-or-later 许可证。CUDA Toolkit 和
+算术代码来自 GFPPS / GPRPS，保留 GPL-2.0-or-later 许可证。CUDA Toolkit 和
 Boost 头文件用于编译；运行需要兼容的 NVIDIA 驱动。
 
 附带 Windows 和 Ubuntu22.04+ x86-64 原生程序，各平台分别提供 sm_86、sm_89、sm_100、sm_120 四个文件。

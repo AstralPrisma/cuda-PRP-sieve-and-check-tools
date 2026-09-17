@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 tool_dir="$(cd -- "${script_dir}/.." && pwd)"
-src="${tool_dir}/src/GSRPS.cu"
+src="${tool_dir}/src/GPRPS.cu"
 out_dir="${1:-${tool_dir}/build}"
 if (( $# > 0 )); then shift; fi
 if (( $# > 0 )); then
@@ -30,6 +30,6 @@ for arch in "${architectures[@]}"; do
   build_id="${source_hash:0:20}-O3-cxx17-ptds-${arch}"
   "${nvcc_bin}" -O3 -std=c++17 -arch="${arch}" \
     --default-stream per-thread \
-    -DGSRPS_BUILD_ID="\"${build_id}\"" \
-    -o "${out_dir}/GSRPS_${arch}" src/GSRPS.cu
+    -DGPRPS_BUILD_ID="\"${build_id}\"" \
+    -o "${out_dir}/GPRPS_${arch}" src/GPRPS.cu
 done

@@ -1,6 +1,6 @@
-# GSRSV
+# GPRSV
 
-GSRSV is a CUDA sieve for the paired or independent forms
+GPRSV is a CUDA sieve for the paired or independent forms
 
 ```text
 k*b^n - 1        k*b^n + 1
@@ -12,20 +12,20 @@ k*n!  - 1        k*n!  + 1
 the `-1` and `+1` terms for a given `k` are treated as one pair. Use
 `--independent` when the two signs must be retained and sieved separately.
 
-The current source version is 2.1. The implementation is a single-translation-
+The current source version is 2.2. The implementation is a single-translation-
 unit CUDA port/reimplementation of the `twinsieve` application from mtsieve.
 
-> 中文：GSRSV 用 GPU 筛选 `k*b^n±1`、`k*n#±1` 和 `k*n!±1`。默认按双子候选处理；加 `-s` 可分别筛选正负两侧。
+> 中文：GPRSV 用 GPU 筛选 `k*b^n±1`、`k*n#±1` 和 `k*n!±1`。默认按双子候选处理；加 `-s` 可分别筛选正负两侧。
 
 ## Requirements
 
 - A CUDA-capable NVIDIA GPU.
 - NVIDIA CUDA Toolkit with `nvcc` and a C++17 host compiler.
 - A 64-bit operating system is recommended for large ranges.
-- Optional: the primesieve shared library for faster prime generation.
+- Optional: the primesieve 12.x shared library for faster prime generation.
 
-GSRSV dynamically loads primesieve at runtime; primesieve headers and link flags
-are not required to build GSRSV. With `--prime-generator auto`, GSRSV uses
+GPRSV dynamically loads primesieve at runtime; primesieve headers and link flags
+are not required to build GPRSV. With `--prime-generator auto`, GPRSV uses
 primesieve when it is available and falls back to its built-in segmented/Miller-
 Rabin generator otherwise. `--prime-generator primesieve` makes absence of the
 library an error.
@@ -47,14 +47,14 @@ many RTX 30-series cards and `sm_89` targets many RTX 40-series cards.
 Linux/WSL:
 
 ```bash
-cd GSRSV
+cd GPRSV
 ./scripts/build-linux.sh build sm_89
 ```
 
 Windows with the Visual C++ host compiler:
 
 ```bat
-cd GSRSV
+cd GPRSV
 scripts\build-windows.bat build sm_89
 ```
 
@@ -64,8 +64,8 @@ the output directory.
 Check the resulting program with:
 
 ```bash
-./GSRSV --version
-./GSRSV --help
+./GPRSV --version
+./GPRSV --help
 ```
 
 ## Starting a sieve
@@ -76,7 +76,7 @@ required. `--base` is additionally required for `b^n` terms.
 Sieve paired `k*1337^78647 +/- 1` candidates:
 
 ```bash
-./GSRSV \
+./GPRSV \
   --kmin 2 --kmax 100000 \
   --base 1337 --exp 78647 --termtype 1 \
   --pmax 1000000000000 \
@@ -89,7 +89,7 @@ Sieve paired `k*1337^78647 +/- 1` candidates:
 Sieve the two signs independently and write ABC output:
 
 ```bash
-./GSRSV \
+./GPRSV \
   -k 2 -K 100000 -b 1337 -n 78647 -t 1 \
   -s -f A -P 1000000000000 \
   -o b1337_independent.pfgw -O b1337_independent_factors.txt
@@ -99,11 +99,11 @@ Primorial and factorial runs use `--termtype 2` and `--termtype 3`
 respectively. `--base` is not used for these two modes:
 
 ```bash
-./GSRSV -k 1 -K 10000 -n 997 -t 2 -P 1000000000 -o p997.pfgw
-./GSRSV -k 1 -K 10000 -n 1000 -t 3 -P 1000000000 -o f1000.pfgw
+./GPRSV -k 1 -K 10000 -n 997 -t 2 -P 1000000000 -o p997.pfgw
+./GPRSV -k 1 -K 10000 -n 1000 -t 3 -P 1000000000 -o f1000.pfgw
 ```
 
-For GSRSV's primorial mode, `n` itself must be prime (for example 997).
+For GPRSV's primorial mode, `n` itself must be prime (for example 997).
 This differs from GFPPS, which permits a composite endpoint in its `n#` expression.
 
 ## Version 2.1 product-path optimization
@@ -156,7 +156,7 @@ Factor storage is allocated only when `--outputfactors` is supplied. Add
 Existing factors can be applied without running the sieve:
 
 ```bash
-./GSRSV \
+./GPRSV \
   --inputterms b1337_pass1.pfgw \
   --inputfactors additional_factors.txt \
   --applyandexit \
@@ -169,7 +169,7 @@ Resume by passing a previously written ABC, ABCD, or NewPGen survivor file to
 `--inputterms` and choosing a new upper prime bound:
 
 ```bash
-./GSRSV \
+./GPRSV \
   --inputterms b1337_pass1.pfgw \
   --pmax 10000000000000 \
   --outputterms b1337_pass2.pfgw \
@@ -183,7 +183,7 @@ raised to the recorded sieve limit, so already completed prime intervals are not
 repeated. Use a separate output filename when preserving the previous checkpoint
 is important.
 
-When interrupting an active run, send a normal Ctrl+C and allow GSRSV to drain
+When interrupting an active run, send a normal Ctrl+C and allow GPRSV to drain
 already submitted CUDA batches and write its final survivor file. A forced kill,
 power loss, or process crash cannot create a new resume file.
 
@@ -238,7 +238,7 @@ power loss, or process crash cannot create a new resume file.
 The efficiency stop is enabled only when all three values are supplied:
 
 ```bash
-./GSRSV ... \
+./GPRSV ... \
   --max-factor-seconds 600 \
   --max-average-factor-seconds 30 \
   --efficiency-window-minutes 60
@@ -259,7 +259,7 @@ Short aliases are `-4`, `-5`, and `-6`. `--spftarget` aliases
 
 ## License and provenance
 
-GSRSV is derived from the GPL-2.0-or-later mtsieve `twinsieve` code. The source
+GPRSV is derived from the GPL-2.0-or-later mtsieve `twinsieve` code. The source
 records the original CPU `TwinApp`/`TwinWorker` copyright as:
 
 ```text

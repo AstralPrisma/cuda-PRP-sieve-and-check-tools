@@ -25,7 +25,7 @@ __pycache__/
 **/cands/
 **/candidates/
 **/factors/
-**/.gsrps_tuning_cache/
+**/.gprps_tuning_cache/
 *.log
 *.ckpt
 *.anchor*

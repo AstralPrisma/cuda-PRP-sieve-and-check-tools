@@ -1,5 +1,5 @@
 /*
-   GSRSV.cu
+   GPRSV.cu
 
    SPDX-License-Identifier: GPL-2.0-or-later
    Copyright (C) 2026 AstralPrisma (A.P.).
@@ -52,6 +52,9 @@
 #include <windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
 #include <dlfcn.h>
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 #endif
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
@@ -63,7 +66,7 @@ constexpr uint64_t PMAX_MAX = (UINT64_C(1) << 62) - 1;
 constexpr uint32_t BMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint32_t NMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint64_t SIGN_BIT = UINT64_C(1) << 63;
-constexpr const char* APP_VERSION = "2.1";
+constexpr const char* APP_VERSION = "2.2";
 enum class TermType : int { Unknown = 0, BN = 1, Primorial = 2, Factorial = 3 };
 enum class FileFormat : int { Unknown = 0, ABCD, ABC, NewPGen };
 enum class PrimeMode : int { Auto = 0, PrimeSieve, Segmented, MillerRabin };
@@ -461,7 +464,7 @@ static void parse_options(int argc, char** argv, Options& o) {
 
 static void print_help() {
     std::cout
-        << "GSRSV v" << APP_VERSION << "\n"
+        << "GPRSV v" << APP_VERSION << "\n"
         << "GPU sieve for k*b^n+/-1, k*n#+/-1, and k*n!+/-1.\n\n"
         << "Core mtsieve-compatible options:\n"
         << "  -k, --kmin K              minimum k\n"
@@ -704,7 +707,7 @@ static std::vector<uint32_t> segmented_base_primes(uint32_t limit, uint32_t segm
 }
 
 // Optional runtime bridge to the same highly optimized primesieve iterator used
-// by mtsieve.  It is loaded dynamically so GSRSV remains one .cu source file
+// by mtsieve.  It is loaded dynamically so GPRSV remains one .cu source file
 // and still compiles without primesieve headers or link flags.
 struct PrimeSieveIteratorAbi {
     size_t i;
@@ -781,47 +784,70 @@ private:
 #endif
     }
 
-    void load() {
+    bool try_load(const std::string& name) {
 #if defined(_WIN32)
-        static const char* names[] = {
-            "primesieve.dll", "libprimesieve.dll"
-        };
-        for (const char* name : names) {
-            handle_ = LoadLibraryA(name);
-            if (handle_) { loaded_name_ = name; break; }
-        }
-        if (!handle_) {
-            error_text_ = "primesieve.dll was not found";
-            return;
-        }
+        handle_ = LoadLibraryA(name.c_str());
 #else
-        static const char* names[] = {
-            "libprimesieve.so.13", "libprimesieve.so.12",
-            "libprimesieve.so.11", "libprimesieve.so"
-#if defined(__APPLE__)
-            , "libprimesieve.dylib"
+        dlerror();
+        handle_ = dlopen(name.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
-        };
-        for (const char* name : names) {
-            dlerror();
-            handle_ = dlopen(name, RTLD_NOW | RTLD_LOCAL);
-            if (handle_) { loaded_name_ = name; break; }
-        }
         if (!handle_) {
-            const char* e = dlerror();
-            error_text_ = e ? e : "libprimesieve was not found";
-            return;
+            // Preserve a useful ABI rejection rather than replacing it with
+            // an error for an optional library name that simply is absent.
+            if (error_text_.empty()) error_text_ = name + " could not be loaded";
+            return false;
         }
-#endif
+        using VersionFn = const char* (*)();
+        auto version_fn = symbol<VersionFn>("primesieve_version");
+        const char* version = version_fn ? version_fn() : nullptr;
+        if (!version || std::string(version).rfind("12.", 0) != 0) {
+            error_text_ = name + " has incompatible iterator ABI (version " +
+                          (version ? version : "unknown") + "); expected primesieve 12.x";
+            close();
+            return false;
+        }
         init_ = symbol<InitFn>("primesieve_init");
         free_ = symbol<FreeFn>("primesieve_free_iterator");
         jump_ = symbol<JumpFn>("primesieve_jump_to");
         skip_ = symbol<JumpFn>("primesieve_skipto");
         generate_ = symbol<GenerateFn>("primesieve_generate_next_primes");
         if (!available()) {
-            error_text_ = "loaded library is missing the primesieve iterator API";
+            error_text_ = name + " is missing the primesieve 12.x iterator API";
             close();
+            return false;
         }
+        loaded_name_ = name + " (v" + version + ")";
+        error_text_.clear();
+        return true;
+    }
+
+    void load() {
+#if defined(__linux__)
+        // Resolve relative to the ELF, not the current working directory or
+        // the login shell's environment. Prefer our verified compatibility
+        // library even when Conda or system packages provide another version.
+        char executable[4096];
+        const auto length = readlink("/proc/self/exe", executable, sizeof(executable));
+        if (length > 0 && static_cast<size_t>(length) < sizeof(executable)) {
+            const std::string path(executable, static_cast<size_t>(length));
+            const auto slash = path.rfind('/');
+            if (slash != std::string::npos) {
+                const auto bundled = path.substr(0, slash) + "/lib/libprimesieve.so.12";
+                if (access(bundled.c_str(), F_OK) == 0) {
+                    if (!try_load(bundled)) fail("Bundled primesieve library: " + error_text_);
+                    return;
+                }
+            }
+        }
+#endif
+#if defined(_WIN32)
+        const char* names[] = {"primesieve.dll", "libprimesieve.dll"};
+#elif defined(__APPLE__)
+        const char* names[] = {"libprimesieve.12.dylib", "libprimesieve.dylib"};
+#else
+        const char* names[] = {"libprimesieve.so.12", "libprimesieve.so"};
+#endif
+        for (const char* name : names) if (try_load(name)) return;
     }
 
     void close() {
@@ -3110,17 +3136,17 @@ static uint64_t run_sieve(Problem& p) {
 } // namespace twinsieve_cuda
 
 void display_banner() {
-    printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════════");
-    printf("%s\n","       .oooooo.         .oooooo..o     ooooooooo.        .oooooo..o    oooooo     oooo      ");
-    printf("%s\n","      d8P'  `Y8b       d8P'    `Y8     `888   `Y88.     d8P'    `Y8     `888.     .8'       ");
-    printf("%s\n","     888               Y88bo.           888   .d88'     Y88bo.           `888.   .8'        ");
-    printf("%s\n","     888                `'Y8888o.       888ooo88P'       `'Y8888o.        `888. .8'         ");
-    printf("%s\n","     888     ooooo          `'Y88b      888`88b.             `'Y88b        `888.8'          ");
-    printf("%s\n","     `88.    .88'  .o. oo     .d8P .o.  888  `88b.  .o. oo     .d8P .o.     `888'   .o.     ");
-    printf("%s\n","      `Y8bood8P'   Y8P 8''88888P'  Y8P o888o  o888o Y8P 8''88888P'  Y8P      `8'    Y8P     ");
-    printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════════");
-    printf("%s\n","                            Generalized-Sierpinski/Riesel-Siever                            ");
-    printf("%s\n","                             Version 2.1 CUDA by A.P. Sept 2026                             ");
+    printf("%s\n","\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220");
+    printf("%s\n","       .oooooo.        ooooooooo.      ooooooooo.        .oooooo..o    oooooo     oooo       ");
+    printf("%s\n","      d8P'  `Y8b       `888   `Y88.    `888   `Y88.     d8P'    `Y8     `888.     .8'        ");
+    printf("%s\n","     888                888   .d88'     888   .d88'     Y88bo.           `888.   .8'         ");
+    printf("%s\n","     888                888ooo88P'      888ooo88P'       `'Y8888o.        `888. .8'          ");
+    printf("%s\n","     888     ooooo      888             888`88b.             `'Y88b        `888.8'           ");
+    printf("%s\n","     `88.    .88'  .o.  888        .o.  888  `88b.  .o. oo     .d8P .o.     `888'    .o.     ");
+    printf("%s\n","      `Y8bood8P'   Y8P o888o       Y8P o888o  o888o Y8P 8''88888P'  Y8P      `8'     Y8P     ");
+    printf("%s\n","\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220");
+    printf("%s\n","                               Generalized-Proth/Riesel-Siever                               ");
+    printf("%s\n","                              Version 2.2 CUDA by A.P. Sep 2026                              ");
 }
 
 #include "console_utf8.hpp"
@@ -3141,7 +3167,7 @@ int main(int argc, char** argv) {
         apply_factor_file(p);
 
         if (!p.opt.quiet) {
-            std::cout << "GSRSV v" << APP_VERSION << "\n"
+            std::cout << "GPRSV v" << APP_VERSION << "\n"
                       << p.opt.min_k << " <= k <= " << p.opt.max_k
                       << ", multiplier=" << term_multiplier_text(p)
                       << ", candidates=" << active_terms(p)

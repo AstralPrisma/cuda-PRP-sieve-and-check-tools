@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // GHCWSV, Copyright (C) 2026 AstralPrisma (A.P.).
-// Infrastructure derived from GNCWSV / GSRSV and GPL mtsieve (Mark Rodenkirch).
+// Infrastructure derived from GNCWSV / GPRSV and GPL mtsieve (Mark Rodenkirch).
 #include <cuda_runtime.h>
 #include <algorithm>
 #include <atomic>

@@ -19,7 +19,7 @@ PRP result is not a deterministic primality proof.
   Fermat witness semantics, explicit checkpoint opt-in, and `GFPPS001` format.
 
 This promotion does not include the unbounded carry-backtracking experiment,
-carry truncation, floating-point modular arithmetic, or changes to GFPS/GSRPS.
+carry truncation, floating-point modular arithmetic, or changes to GFPS/GPRPS.
 
 ### Why the carry fusion preserves the original operation
 

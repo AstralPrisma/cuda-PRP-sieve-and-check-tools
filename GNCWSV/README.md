@@ -214,7 +214,7 @@ GNCWSV intentionally has no efficiency/no-factor timeout system.
 ## License and provenance
 
 The prime-generation and CUDA infrastructure is derived from the
-GPL-2.0-or-later GSRSV/mtsieve-based implementation. The varying-exponent
+GPL-2.0-or-later GPRSV/mtsieve-based implementation. The varying-exponent
 recurrence follows the standard Generalized Cullen/Woodall sieve approach.
 
 GNCWSV is distributed under the GNU General Public License, version 2 or later.

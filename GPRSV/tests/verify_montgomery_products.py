@@ -1,4 +1,4 @@
-"""Single-thread CPU integer audit of the proposed GSRSV raw-chunk REDC path.
+"""Single-thread CPU integer audit of the proposed GPRSV raw-chunk REDC path.
 
 No CUDA, compilation, subprocesses, source modifications or result files.
 Mirrors CUDA's uint64 low/high product + carry implementation exactly; Python
@@ -302,7 +302,7 @@ def main(argv=None) -> int:
             exact = math.factorial(n)
         else:
             factors = primes_up_to(n)
-            assert factors[-1] == n, "GSRSV requires a prime primorial endpoint"
+            assert factors[-1] == n, "GPRSV requires a prime primorial endpoint"
             chunks = pack_factors(factors)
             exact = math.prod(factors)
         primes = sorted({3, next_prime(n + 1), 1000003, (1 << 32) - 5,

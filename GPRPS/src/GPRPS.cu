@@ -21,7 +21,7 @@
 #include <fstream>
 #include <functional>
 #include <boost/multiprecision/cpp_int.hpp>
-#ifdef GSRPS_GMP_DIAGNOSTIC
+#ifdef GPRPS_GMP_DIAGNOSTIC
 #include <gmpxx.h>
 #endif
 #include <iostream>
@@ -61,12 +61,12 @@ constexpr ModInfo kMods[] = {
 // Runtime tuning and throttling controls.
 //
 // Environment variables (backward compatible):
-//   GSRPS_NTT_BLOCKS=1..4096       (forces a value and disables auto-tuning)
-//   GSRPS_WINDOW_BITS=1..8         (forces a value and disables window selection)
-//   GSRPS_DUTY_PERCENT=1..100
-//   GSRPS_TUNING_CACHE_DIR=<path>   (default .gsrps_tuning_cache)
-//   GSRPS_TUNING_CACHE_MAX_AGE_HOURS=1..8760 (default 24)
-//   GSRPS_DISABLE_TUNING_CACHE=1
+//   GPRPS_NTT_BLOCKS=1..4096       (forces a value and disables auto-tuning)
+//   GPRPS_WINDOW_BITS=1..8         (forces a value and disables window selection)
+//   GPRPS_DUTY_PERCENT=1..100
+//   GPRPS_TUNING_CACHE_DIR=<path>   (default .gprps_tuning_cache)
+//   GPRPS_TUNING_CACHE_MAX_AGE_HOURS=1..8760 (default 24)
+//   GPRPS_DISABLE_TUNING_CACHE=1
 //
 // Command-line options (override environment variables and may appear anywhere):
 //   --force-ntt-blocks <1..4096> or --force-ntt-blocks=<1..4096>
@@ -83,8 +83,8 @@ constexpr int kDefaultNttBlocks = 64;
 constexpr int kMaxNttBlocks = 4096;  // n <= 20: at most 2^20 butterflies / 256 threads.
 constexpr int kDefaultDutyPercent = 100;
 constexpr uint64_t kDefaultCheckpointEveryBits = 100000;
-#ifndef GSRPS_BUILD_ID
-#define GSRPS_BUILD_ID __DATE__ "_" __TIME__
+#ifndef GPRPS_BUILD_ID
+#define GPRPS_BUILD_ID __DATE__ "_" __TIME__
 #endif
 
 int parse_bounded_int(const std::string& text, const char* name, int min_value, int max_value) {
@@ -127,23 +127,23 @@ struct CheckpointOptions {
     bool configured = false;
 };
 
-class GsrpsInterrupted : public std::runtime_error {
+class GprpsInterrupted : public std::runtime_error {
 public:
-    explicit GsrpsInterrupted(const std::string& message)
+    explicit GprpsInterrupted(const std::string& message)
         : std::runtime_error(message) {}
 };
 
 volatile std::sig_atomic_t g_check_stop_requested = 0;
 
-void gsrps_signal_handler(int) {
+void gprps_signal_handler(int) {
     g_check_stop_requested = 1;
 }
 
 void install_check_signal_handlers() {
     g_check_stop_requested = 0;
-    std::signal(SIGINT, gsrps_signal_handler);
+    std::signal(SIGINT, gprps_signal_handler);
 #ifdef _WIN32
-    std::signal(SIGBREAK, gsrps_signal_handler);
+    std::signal(SIGBREAK, gprps_signal_handler);
 #endif
 }
 
@@ -166,25 +166,25 @@ struct GpuThrottleConfig {
 
 GpuThrottleConfig& gpu_throttle_config() {
     static GpuThrottleConfig config = [] {
-        const char* ntt_text = std::getenv("GSRPS_NTT_BLOCKS");
-        const char* window_text = std::getenv("GSRPS_WINDOW_BITS");
-        const char* cache_dir_text = std::getenv("GSRPS_TUNING_CACHE_DIR");
+        const char* ntt_text = std::getenv("GPRPS_NTT_BLOCKS");
+        const char* window_text = std::getenv("GPRPS_WINDOW_BITS");
+        const char* cache_dir_text = std::getenv("GPRPS_TUNING_CACHE_DIR");
         return GpuThrottleConfig{
             ntt_text != nullptr && *ntt_text != '\0'
-                ? parse_bounded_int(ntt_text, "GSRPS_NTT_BLOCKS", 1, kMaxNttBlocks)
+                ? parse_bounded_int(ntt_text, "GPRPS_NTT_BLOCKS", 1, kMaxNttBlocks)
                 : kDefaultNttBlocks,
             ntt_text != nullptr && *ntt_text != '\0',
             window_text != nullptr && *window_text != '\0'
-                ? parse_bounded_int(window_text, "GSRPS_WINDOW_BITS", 1, 8)
+                ? parse_bounded_int(window_text, "GPRPS_WINDOW_BITS", 1, 8)
                 : 0,
             window_text != nullptr && *window_text != '\0',
-            read_env_int("GSRPS_DUTY_PERCENT", kDefaultDutyPercent, 1, 100),
+            read_env_int("GPRPS_DUTY_PERCENT", kDefaultDutyPercent, 1, 100),
             false,
             cache_dir_text != nullptr && *cache_dir_text != '\0'
                 ? std::string(cache_dir_text)
-                : std::string(".gsrps_tuning_cache"),
-            std::getenv("GSRPS_DISABLE_TUNING_CACHE") == nullptr,
-            read_env_int("GSRPS_TUNING_CACHE_MAX_AGE_HOURS", 24, 1, 8760),
+                : std::string(".gprps_tuning_cache"),
+            std::getenv("GPRPS_DISABLE_TUNING_CACHE") == nullptr,
+            read_env_int("GPRPS_TUNING_CACHE_MAX_AGE_HOURS", 24, 1, 8760),
         };
     }();
     return config;
@@ -408,7 +408,7 @@ CachedTuning load_cached_tuning(const std::string& key) {
             !std::getline(input, blocks_text) ||
             !std::getline(input, stored_key) ||
             !std::getline(input, checksum) ||
-            magic != "GSRPS_TUNING_CACHE_V1" || stored_key != key) {
+            magic != "GPRPS_TUNING_CACHE_V1" || stored_key != key) {
             return result;
         }
         std::string extra;
@@ -471,7 +471,7 @@ bool save_cached_tuning(const std::string& key, int blocks) {
             const std::string blocks_text = std::to_string(blocks);
             const std::string payload =
                 timestamp + "\n" + blocks_text + "\n" + key + "\n";
-            output << "GSRPS_TUNING_CACHE_V1\n"
+            output << "GPRPS_TUNING_CACHE_V1\n"
                    << payload
                    << tuning_cache_hash_text(payload) << "\n";
             output.flush();
@@ -635,7 +635,7 @@ void checkpoint_sha_u64(CheckpointSha256& sha, uint64_t value) {
     sha.update(bytes, sizeof(bytes));
 }
 
-struct GsrpsCheckpoint {
+struct GprpsCheckpoint {
     uint64_t k = 0;
     uint64_t b = 0;
     uint64_t n = 0;
@@ -652,8 +652,8 @@ struct GsrpsCheckpoint {
     std::vector<uint32_t> digits;
 };
 
-constexpr uint32_t kGsrpsCheckpointVersion = 1;
-constexpr uint8_t kGsrpsCheckpointMagic[8] = {'G', 'S', 'R', 'P', 'C', 'K', '1', 0};
+constexpr uint32_t kGprpsCheckpointVersion = 1;
+constexpr uint8_t kGprpsCheckpointMagic[8] = {'G', 'S', 'R', 'P', 'C', 'K', '1', 0};
 
 uint32_t checkpoint_c_field(int c) {
     if (c == 1) return 1;
@@ -667,7 +667,7 @@ int checkpoint_c_value(uint32_t value) {
     throw std::runtime_error("checkpoint contains an invalid c value");
 }
 
-void validate_checkpoint_shape(const GsrpsCheckpoint& checkpoint) {
+void validate_checkpoint_shape(const GprpsCheckpoint& checkpoint) {
     if (checkpoint.k == 0 || checkpoint.b < 2 || checkpoint.n == 0 ||
         checkpoint.witness < 2) {
         throw std::runtime_error("checkpoint contains invalid expression metadata");
@@ -699,12 +699,17 @@ void validate_checkpoint_shape(const GsrpsCheckpoint& checkpoint) {
     }
 }
 
-std::array<uint8_t, 32> gsrps_checkpoint_digest(const GsrpsCheckpoint& checkpoint) {
-    static constexpr uint8_t domain[] = "GSRPS checkpoint v1";
+std::array<uint8_t, 32> gprps_checkpoint_digest(const GprpsCheckpoint& checkpoint) {
+    // Frozen v1 wire-format domain bytes, independent of executable branding.
+    // Changing these bytes would invalidate previously authenticated checkpoints.
+    static constexpr uint8_t domain[] = {
+        0x47, 0x53, 0x52, 0x50, 0x53, 0x20, 0x63, 0x68, 0x65,
+        0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x20, 0x76, 0x31
+    };
     CheckpointSha256 sha;
-    sha.update(domain, sizeof(domain) - 1);
-    sha.update(kGsrpsCheckpointMagic, sizeof(kGsrpsCheckpointMagic));
-    checkpoint_sha_u32(sha, kGsrpsCheckpointVersion);
+    sha.update(domain, sizeof(domain));
+    sha.update(kGprpsCheckpointMagic, sizeof(kGprpsCheckpointMagic));
+    checkpoint_sha_u32(sha, kGprpsCheckpointVersion);
     checkpoint_sha_u32(sha, checkpoint_c_field(checkpoint.c));
     checkpoint_sha_u32(sha, checkpoint.group_size);
     checkpoint_sha_u32(sha, checkpoint.log_len);
@@ -753,18 +758,18 @@ uint64_t checkpoint_read_u64(std::istream& input, const std::string& path) {
     return value;
 }
 
-void write_gsrps_checkpoint(const std::string& path, const GsrpsCheckpoint& checkpoint) {
+void write_gprps_checkpoint(const std::string& path, const GprpsCheckpoint& checkpoint) {
     validate_checkpoint_shape(checkpoint);
-    const auto digest = gsrps_checkpoint_digest(checkpoint);
+    const auto digest = gprps_checkpoint_digest(checkpoint);
     const std::string temporary_path = path + ".tmp";
     {
         std::ofstream output(temporary_path, std::ios::binary | std::ios::trunc);
         if (!output) {
             throw std::runtime_error("cannot open checkpoint temp file for writing: " + temporary_path);
         }
-        output.write(reinterpret_cast<const char*>(kGsrpsCheckpointMagic),
-                     sizeof(kGsrpsCheckpointMagic));
-        checkpoint_write_u32(output, kGsrpsCheckpointVersion);
+        output.write(reinterpret_cast<const char*>(kGprpsCheckpointMagic),
+                     sizeof(kGprpsCheckpointMagic));
+        checkpoint_write_u32(output, kGprpsCheckpointVersion);
         checkpoint_write_u32(output, checkpoint_c_field(checkpoint.c));
         checkpoint_write_u32(output, checkpoint.group_size);
         checkpoint_write_u32(output, checkpoint.log_len);
@@ -849,20 +854,20 @@ void write_gsrps_checkpoint(const std::string& path, const GsrpsCheckpoint& chec
 #endif
 }
 
-GsrpsCheckpoint read_gsrps_checkpoint(const std::string& path) {
+GprpsCheckpoint read_gprps_checkpoint(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("cannot open checkpoint file: " + path);
     uint8_t magic[8];
     input.read(reinterpret_cast<char*>(magic), sizeof(magic));
     if (!input) throw std::runtime_error("checkpoint header is truncated: " + path);
-    if (std::memcmp(magic, kGsrpsCheckpointMagic, sizeof(magic)) != 0) {
-        throw std::runtime_error("unsupported GSRPS checkpoint format: " + path);
+    if (std::memcmp(magic, kGprpsCheckpointMagic, sizeof(magic)) != 0) {
+        throw std::runtime_error("unsupported GPRPS checkpoint format: " + path);
     }
     const uint32_t version = checkpoint_read_u32(input, path);
-    if (version != kGsrpsCheckpointVersion) {
-        throw std::runtime_error("unsupported GSRPS checkpoint version: " + path);
+    if (version != kGprpsCheckpointVersion) {
+        throw std::runtime_error("unsupported GPRPS checkpoint version: " + path);
     }
-    GsrpsCheckpoint checkpoint;
+    GprpsCheckpoint checkpoint;
     checkpoint.c = checkpoint_c_value(checkpoint_read_u32(input, path));
     checkpoint.group_size = checkpoint_read_u32(input, path);
     checkpoint.log_len = checkpoint_read_u32(input, path);
@@ -890,14 +895,14 @@ GsrpsCheckpoint read_gsrps_checkpoint(const std::string& path) {
     if (input.read(&trailing, 1)) throw std::runtime_error("checkpoint has trailing data: " + path);
     if (!input.eof()) throw std::runtime_error("failed while checking checkpoint length: " + path);
     validate_checkpoint_shape(checkpoint);
-    if (gsrps_checkpoint_digest(checkpoint) != expected_digest) {
+    if (gprps_checkpoint_digest(checkpoint) != expected_digest) {
         throw std::runtime_error("checkpoint SHA-256 mismatch: " + path);
     }
     return checkpoint;
 }
 
 std::pair<uint64_t, uint64_t> checkpoint_residue_checksum(
-    const GsrpsCheckpoint& checkpoint) {
+    const GprpsCheckpoint& checkpoint) {
     const auto reduce = [&](uint64_t modulus) {
         uint64_t value = 0;
         for (auto it = checkpoint.digits.rbegin(); it != checkpoint.digits.rend(); ++it) {
@@ -910,8 +915,8 @@ std::pair<uint64_t, uint64_t> checkpoint_residue_checksum(
     return {reduce(1000000007ull), reduce(1000000009ull)};
 }
 
-void run_gsrps_checkpoint_info(const std::string& path) {
-    const GsrpsCheckpoint checkpoint = read_gsrps_checkpoint(path);
+void run_gprps_checkpoint_info(const std::string& path) {
+    const GprpsCheckpoint checkpoint = read_gprps_checkpoint(path);
     const auto checksum = checkpoint_residue_checksum(checkpoint);
     std::cout << "checkpoint-info: path=" << path
               << ", N=" << checkpoint.k << "*" << checkpoint.b << "^"
@@ -930,18 +935,18 @@ void run_gsrps_checkpoint_info(const std::string& path) {
               << "\n";
 }
 
-struct GsrpsExpression {
+struct GprpsExpression {
     uint64_t k;
     uint64_t b;
     uint64_t n;
     int c;
 };
 
-GsrpsExpression parse_gsrps_expression(std::string expression) {
+GprpsExpression parse_gprps_expression(std::string expression) {
     expression.erase(std::remove_if(expression.begin(), expression.end(),
                                     [](unsigned char ch) { return std::isspace(ch) != 0; }),
                      expression.end());
-    if (expression.size() < 5) throw std::runtime_error("invalid GSRPS expression");
+    if (expression.size() < 5) throw std::runtime_error("invalid GPRPS expression");
     int c = 0;
     if (expression.size() >= 2 && expression.compare(expression.size() - 2, 2, "+1") == 0) c = 1;
     if (expression.size() >= 2 && expression.compare(expression.size() - 2, 2, "-1") == 0) c = -1;
@@ -960,7 +965,7 @@ GsrpsExpression parse_gsrps_expression(std::string expression) {
         (star != std::string::npos && left.find('*', star + 1) != std::string::npos)) {
         throw std::runtime_error("expression must have the form k*b^n+/-1");
     }
-    return GsrpsExpression{parse_u64(k_text.c_str()), parse_u64(b_text.c_str()),
+    return GprpsExpression{parse_u64(k_text.c_str()), parse_u64(b_text.c_str()),
                            parse_u64(exponent.c_str()), c};
 }
 
@@ -1504,27 +1509,27 @@ __global__ void ntt_stage4_2_dif_mont_kernel(
     }
 }
 
-#ifndef GSRPS_SHARED_NTT_TILE_LOG
-#define GSRPS_SHARED_NTT_TILE_LOG 11
+#ifndef GPRPS_SHARED_NTT_TILE_LOG
+#define GPRPS_SHARED_NTT_TILE_LOG 11
 #endif
-#ifndef GSRPS_SHARED_RADIX8
-#define GSRPS_SHARED_RADIX8 1
+#ifndef GPRPS_SHARED_RADIX8
+#define GPRPS_SHARED_RADIX8 1
 #endif
-#ifndef GSRPS_SHARED_NTT_THREADS
-#define GSRPS_SHARED_NTT_THREADS 256
+#ifndef GPRPS_SHARED_NTT_THREADS
+#define GPRPS_SHARED_NTT_THREADS 256
 #endif
-#ifndef GSRPS_GLOBAL_RADIX4
-#define GSRPS_GLOBAL_RADIX4 1
+#ifndef GPRPS_GLOBAL_RADIX4
+#define GPRPS_GLOBAL_RADIX4 1
 #endif
-#ifndef GSRPS_GLOBAL_RADIX8
-#define GSRPS_GLOBAL_RADIX8 1
+#ifndef GPRPS_GLOBAL_RADIX8
+#define GPRPS_GLOBAL_RADIX8 1
 #endif
-#ifndef GSRPS_GLOBAL_RADIX16
-#define GSRPS_GLOBAL_RADIX16 1
+#ifndef GPRPS_GLOBAL_RADIX16
+#define GPRPS_GLOBAL_RADIX16 1
 #endif
-constexpr int kSharedNttTileLog = GSRPS_SHARED_NTT_TILE_LOG;
+constexpr int kSharedNttTileLog = GPRPS_SHARED_NTT_TILE_LOG;
 constexpr int kSharedNttTile = 1 << kSharedNttTileLog;
-constexpr int kSharedNttThreads = GSRPS_SHARED_NTT_THREADS;
+constexpr int kSharedNttThreads = GPRPS_SHARED_NTT_THREADS;
 
 template<bool Square>
 __global__ void ntt_tile_product_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
@@ -1548,7 +1553,7 @@ __global__ void ntt_tile_product_dit_mont_kernel(uint32_t* r0, uint32_t* r1,
         }
         __syncthreads();
         int stage = 1;
-#if GSRPS_SHARED_RADIX8
+#if GPRPS_SHARED_RADIX8
         for (; stage + 2 <= kSharedNttTileLog; stage += 3) {
             const int len = 1 << (stage + 2);
             const int root1_offset = (1 << (stage - 1)) - 1;
@@ -1605,7 +1610,7 @@ __global__ void ntt_tile_dif_mont_kernel(uint32_t* r0, uint32_t* r1,
         }
         __syncthreads();
         int stage = kSharedNttTileLog;
-#if GSRPS_SHARED_RADIX8
+#if GPRPS_SHARED_RADIX8
         for (; stage - 2 >= 1; stage -= 3) {
             const int len = 1 << stage;
             const int root_big_offset = (1 << (stage - 1)) - 1;
@@ -1694,12 +1699,12 @@ __global__ void crt2_raw_kernel(const uint32_t* r0, const uint32_t* r1,
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < coeff_count) coeff[i] = crt2_reconstruct_shoup(r0[i], r1[i]);
 }
-#ifndef GSRPS_EXACT_CARRY_SEGMENT
-#define GSRPS_EXACT_CARRY_SEGMENT 8
+#ifndef GPRPS_EXACT_CARRY_SEGMENT
+#define GPRPS_EXACT_CARRY_SEGMENT 8
 #endif
-constexpr int kExactCarrySegment = GSRPS_EXACT_CARRY_SEGMENT;
+constexpr int kExactCarrySegment = GPRPS_EXACT_CARRY_SEGMENT;
 static_assert(kExactCarrySegment >= 4 && kExactCarrySegment <= 256,
-              "GSRPS_EXACT_CARRY_SEGMENT must be in [4, 256]");
+              "GPRPS_EXACT_CARRY_SEGMENT must be in [4, 256]");
 
 // A finite dependency halo is not an exact carry algorithm: a one-unit carry
 // can propagate through an arbitrarily long run of radix-1 digits.  The exact
@@ -2401,7 +2406,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
     const int threads = 256;
     int stage = log_len;
     const int shared_tail = (log_len >= kSharedNttTileLog) ? kSharedNttTileLog : 0;
-#if GSRPS_GLOBAL_RADIX16
+#if GPRPS_GLOBAL_RADIX16
     // Exact multiples of three are handled more efficiently by pure radix-8:
     // it uses the same number of launches without radix-16 register pressure.
     const bool prefer_global_radix16 = ((log_len - shared_tail) % 3) != 0;
@@ -2421,7 +2426,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
         }
     }
 #endif
-#if GSRPS_GLOBAL_RADIX8
+#if GPRPS_GLOBAL_RADIX8
     for (; stage - 2 > shared_tail; stage -= 3) {
         const int len = 1 << stage;
         const int groups = len_total / 8;
@@ -2437,7 +2442,7 @@ void ntt2_forward_dif_mont(uint32_t* r0, uint32_t* r1, int log_len,
         cuda_check(cudaGetLastError(), "ntt_stage3_2_dif_mont launch");
     }
 #endif
-#if GSRPS_GLOBAL_RADIX4
+#if GPRPS_GLOBAL_RADIX4
     for (; stage - 1 > shared_tail; stage -= 2) {
         const int len = 1 << stage;
         const int groups = len_total / 4;
@@ -2502,7 +2507,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         }
         cuda_check(cudaGetLastError(), "pointwise product fallback launch");
     }
-#if GSRPS_GLOBAL_RADIX16
+#if GPRPS_GLOBAL_RADIX16
     const int shared_prefix = (log_len >= kSharedNttTileLog) ? kSharedNttTileLog : 0;
     const bool prefer_global_radix16 = ((log_len - shared_prefix) % 3) != 0;
     if (prefer_global_radix16) {
@@ -2532,7 +2537,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         }
     }
 #endif
-#if GSRPS_GLOBAL_RADIX8
+#if GPRPS_GLOBAL_RADIX8
     for (; stage + 2 <= log_len; stage += 3) {
         const int len = 1 << (stage + 2);
         const int groups = len_total / 8;
@@ -2560,7 +2565,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
         cuda_check(cudaGetLastError(), "ntt_stage3_2_inverse_dit_mont launch");
     }
 #endif
-#if GSRPS_GLOBAL_RADIX4
+#if GPRPS_GLOBAL_RADIX4
     for (; stage + 1 <= log_len; stage += 2) {
         const int len = 1 << (stage + 1);
         const int groups = len_total / 4;
@@ -2609,7 +2614,7 @@ void ntt2_inverse_product_dit_mont(uint32_t* r0, uint32_t* r1, int log_len,
     }
 }
 
-void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterations,
+void run_bench_gprps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterations,
                           bool multiply_mode = false, bool check_mode = false,
                           uint64_t check_witness = 2) {
     const auto complete_started = std::chrono::steady_clock::now();
@@ -2631,10 +2636,10 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
     if (check_mode && checkpoint_config.resume && checkpoint_config.path.empty()) {
         throw std::runtime_error("--resume-checkpoint requires --checkpoint");
     }
-#ifndef GSRPS_PREFERRED_RADIX
-#define GSRPS_PREFERRED_RADIX 100000
+#ifndef GPRPS_PREFERRED_RADIX
+#define GPRPS_PREFERRED_RADIX 100000
 #endif
-    constexpr uint64_t preferred_radix = GSRPS_PREFERRED_RADIX;
+    constexpr uint64_t preferred_radix = GPRPS_PREFERRED_RADIX;
     constexpr uint64_t maximum_single_limb_base = 998244353ull;
     if (b > maximum_single_limb_base) {
         throw std::runtime_error("current general-base path requires b <= 998244353");
@@ -2692,7 +2697,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
         throw std::runtime_error("conservative radix is incompatible with the current fixed-divisor/CRT path");
     }
     bool radix_tier_upgrade = false;
-#ifndef GSRPS_DISABLE_RADIX_UPGRADE
+#ifndef GPRPS_DISABLE_RADIX_UPGRADE
     int candidate_g = g;
     uint64_t candidate_radix = radix;
     while (candidate_radix <= maximum_single_limb_base / b &&
@@ -2805,7 +2810,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
     boost::multiprecision::cpp_int check_modulus = 0;
     boost::multiprecision::cpp_int check_exponent = 0;
     uint64_t check_total_bits = 0;
-    GsrpsCheckpoint loaded_checkpoint;
+    GprpsCheckpoint loaded_checkpoint;
     bool has_loaded_checkpoint = false;
     if (check_mode) {
         boost::multiprecision::cpp_int power = 1;
@@ -2824,7 +2829,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
         check_total_bits =
             static_cast<uint64_t>(boost::multiprecision::msb(check_exponent)) + 1;
         if (checkpoint_config.resume) {
-            loaded_checkpoint = read_gsrps_checkpoint(checkpoint_config.path);
+            loaded_checkpoint = read_gprps_checkpoint(checkpoint_config.path);
             has_loaded_checkpoint = true;
             if (loaded_checkpoint.k != k || loaded_checkpoint.b != b ||
                 loaded_checkpoint.n != n || loaded_checkpoint.c != c ||
@@ -2836,7 +2841,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                 loaded_checkpoint.radix != radix ||
                 loaded_checkpoint.divisor != divisor ||
                 loaded_checkpoint.digits.size() != static_cast<size_t>(active)) {
-                throw std::runtime_error("checkpoint representation does not match this GSRPS build");
+                throw std::runtime_error("checkpoint representation does not match this GPRPS build");
             }
             if (loaded_checkpoint.total_bits != check_total_bits) {
                 throw std::runtime_error("checkpoint exponent bit count does not match --check");
@@ -3440,13 +3445,13 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                     device_uuid << std::setw(2) << static_cast<unsigned>(value);
                 }
                 const bool autotune_uses_graphs =
-                    std::getenv("GSRPS_DISABLE_CUDA_GRAPHS") == nullptr;
+                    std::getenv("GPRPS_DISABLE_CUDA_GRAPHS") == nullptr;
                 const uint64_t multiply_ratio_per_mille =
                     (planned_check_multiplications * 1000 + total_bits / 2) /
                     total_bits;
                 std::ostringstream tuning_key_builder;
                 tuning_key_builder
-                    << "schema=1|build=" << GSRPS_BUILD_ID
+                    << "schema=1|build=" << GPRPS_BUILD_ID
                     << "|uuid=" << device_uuid.str()
                     << "|cc=" << properties.major << "." << properties.minor
                     << "|sm=" << properties.multiProcessorCount
@@ -3463,7 +3468,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                     << "|cuda_graphs=" << (autotune_uses_graphs ? 1 : 0)
                     << "|b=" << b << "|n=" << n << "|c=" << c
                     << "|carry_segment=" << kExactCarrySegment
-                    << "|global_radix16=" << GSRPS_GLOBAL_RADIX16;
+                    << "|global_radix16=" << GPRPS_GLOBAL_RADIX16;
                 const std::string tuning_key = tuning_key_builder.str();
                 const CachedTuning cached_tuning =
                     load_cached_tuning(tuning_key);
@@ -3795,7 +3800,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
 
             const uint64_t total_bits = check_total_bits;
             const bool use_cuda_graphs =
-                std::getenv("GSRPS_DISABLE_CUDA_GRAPHS") == nullptr;
+                std::getenv("GPRPS_DISABLE_CUDA_GRAPHS") == nullptr;
             constexpr int max_square_run_graph = 64;
             const int square_run_graph_count = static_cast<int>(
                 std::min<uint64_t>(max_square_run_graph, total_bits));
@@ -3922,7 +3927,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                           << "\n";
             } else {
                 std::cout << "cuda-graphs: disabled by "
-                             "GSRPS_DISABLE_CUDA_GRAPHS\n";
+                             "GPRPS_DISABLE_CUDA_GRAPHS\n";
             }
             const auto run_square_graph = [&](int count) {
                 while (count > 0) {
@@ -3952,14 +3957,14 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
             };
 
             uint64_t diagnostic_stop_bits = 0;
-            if (const char* stop_text = std::getenv("GSRPS_DIAGNOSTIC_STOP_BITS")) {
+            if (const char* stop_text = std::getenv("GPRPS_DIAGNOSTIC_STOP_BITS")) {
                 diagnostic_stop_bits = parse_u64(stop_text);
                 if (diagnostic_stop_bits == 0 || diagnostic_stop_bits > total_bits) {
-                    throw std::runtime_error("GSRPS_DIAGNOSTIC_STOP_BITS is out of range");
+                    throw std::runtime_error("GPRPS_DIAGNOSTIC_STOP_BITS is out of range");
                 }
             }
-#ifdef GSRPS_GMP_PREFIX_BITS
-            const uint64_t progress_step = GSRPS_GMP_PREFIX_BITS;
+#ifdef GPRPS_GMP_PREFIX_BITS
+            const uint64_t progress_step = GPRPS_GMP_PREFIX_BITS;
 #else
             const uint64_t progress_step = diagnostic_stop_bits != 0 ? diagnostic_stop_bits :
                 std::max<uint64_t>(100000, (total_bits + 99) / 100);
@@ -4055,7 +4060,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                 }
                 std::vector<int64_t> host_digits = copy_folded_to_host();
                 canonicalize_host(host_digits);
-                GsrpsCheckpoint checkpoint;
+                GprpsCheckpoint checkpoint;
                 checkpoint.k = k;
                 checkpoint.b = b;
                 checkpoint.n = n;
@@ -4074,14 +4079,14 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                     checkpoint.digits[static_cast<size_t>(i)] =
                         static_cast<uint32_t>(host_digits[static_cast<size_t>(i)]);
                 }
-                write_gsrps_checkpoint(checkpoint_config.path, checkpoint);
+                write_gprps_checkpoint(checkpoint_config.path, checkpoint);
                 last_checkpoint_bits = processed_bits;
                 std::cout << "checkpoint: saved path=" << checkpoint_config.path
                           << ", processed_bits=" << processed_bits << "/" << total_bits
                           << ", multiplies=" << multiplications
                           << ", reason=" << reason << "\n";
             };
-#ifdef GSRPS_GMP_DIAGNOSTIC
+#ifdef GPRPS_GMP_DIAGNOSTIC
             const mpz_class diagnostic_modulus(check_modulus.convert_to<std::string>());
             const mpz_class diagnostic_base(check_witness);
 #endif
@@ -4089,7 +4094,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
             auto duty_batch_started = wall_started;
             if (g_check_stop_requested != 0) {
                 save_checkpoint(square_count, multiply_count, "interrupt");
-                throw GsrpsInterrupted("interrupted before the first exponent operation");
+                throw GprpsInterrupted("interrupted before the first exponent operation");
             }
             while (bit >= 0) {
                 if (!boost::multiprecision::bit_test(check_exponent, static_cast<unsigned>(bit))) {
@@ -4171,7 +4176,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                               << ", multiplies=" << multiply_count
                               << ", elapsed_s=" << std::setprecision(1) << elapsed
                               << ", eta_s=" << eta << "\n";
-#ifdef GSRPS_GMP_DIAGNOSTIC
+#ifdef GPRPS_GMP_DIAGNOSTIC
                     const auto reference_started = std::chrono::steady_clock::now();
                     std::vector<int64_t> diagnostic_digits(canonical_count, 0);
                     cuda_check(cudaMemcpy(diagnostic_digits.data(), folded,
@@ -4211,13 +4216,13 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                         throw std::runtime_error("GMP prefix mismatch at processed bit " +
                                                  std::to_string(square_count));
                     }
-#ifdef GSRPS_GMP_STOP_AFTER_PREFIX
+#ifdef GPRPS_GMP_STOP_AFTER_PREFIX
                     free_all();
                     return;
 #endif
 #endif
                     if (interrupt_due) {
-                        throw GsrpsInterrupted("interrupted after saving a safe checkpoint boundary");
+                        throw GprpsInterrupted("interrupted after saving a safe checkpoint boundary");
                     }
                     if (diagnostic_stop_bits != 0 && square_count >= diagnostic_stop_bits) {
                         std::vector<int64_t> prefix_digits(canonical_count, 0);
@@ -4286,7 +4291,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
                 exponentiation_finished - wall_started).count();
             const double total_seconds = std::chrono::duration<double>(
                 check_finished - complete_started).count();
-            std::cout << "gsrps-check: N=" << k << "*" << b << "^" << n
+            std::cout << "gprps-check: N=" << k << "*" << b << "^" << n
                       << (c == 1 ? "+1" : "-1")
                       << ", witness=" << check_witness
                       << ", exponent_bits=" << total_bits
@@ -4343,7 +4348,7 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
         const double ms_per_square = static_cast<double>(elapsed_ms) / iterations;
         const double exponent_bits = static_cast<double>(n) * std::log2(static_cast<double>(b)) +
                                      std::log2(static_cast<double>(k));
-        std::cout << "gsrps-full-bench: operation=" << (multiply_mode ? "mul-cached" : "square")
+        std::cout << "gprps-full-bench: operation=" << (multiply_mode ? "mul-cached" : "square")
                   << ", k=" << k << ", b=" << b << ", n=" << n << ", c=" << c
                   << ", g=" << g << ", radix=" << radix << ", fold_divisor=" << divisor
                   << ", radix_policy=" << (radix_tier_upgrade ? "ntt-tier-upgrade" : "conservative")
@@ -4362,9 +4367,9 @@ void run_bench_gsrps_full(uint64_t k, uint64_t b, uint64_t n, int c, int iterati
     }
 }
 
-void run_gsrps_check(uint64_t k, uint64_t b, uint64_t n, int c, uint64_t witness) {
+void run_gprps_check(uint64_t k, uint64_t b, uint64_t n, int c, uint64_t witness) {
     install_check_signal_handlers();
-    run_bench_gsrps_full(k, b, n, c, 1, false, true, witness);
+    run_bench_gprps_full(k, b, n, c, 1, false, true, witness);
 }
 
 void run_exact_carry_regression() {
@@ -4562,40 +4567,40 @@ void run_exact_carry_regression() {
     }
 }
 
-void run_gsrps_selftest() {
+void run_gprps_selftest() {
     run_exact_carry_regression();
-    run_bench_gsrps_full(4, 10, 2560, 1, 5, false);
-    run_bench_gsrps_full(4, 10, 2560, -1, 5, true);
+    run_bench_gprps_full(4, 10, 2560, 1, 5, false);
+    run_bench_gprps_full(4, 10, 2560, -1, 5, true);
     // --selftest is itself an explicit request for validation. Keep the
     // independent CPU oracle for these tiny regression cases only.
     const bool saved_verify_cpp_int = gpu_throttle_config().verify_cpp_int;
     gpu_throttle_config().verify_cpp_int = true;
-    run_gsrps_check(1, 2, 5, -1, 2);   // 31, prime
-    run_gsrps_check(3, 10, 2, 1, 2);   // 301, composite
-    run_gsrps_check(2, 3, 2, 1, 2);    // 19, prime; non-decimal base
-    run_gsrps_check(4, 3, 4, 1, 2);    // 325, composite; non-decimal base
+    run_gprps_check(1, 2, 5, -1, 2);   // 31, prime
+    run_gprps_check(3, 10, 2, 1, 2);   // 301, composite
+    run_gprps_check(2, 3, 2, 1, 2);    // 19, prime; non-decimal base
+    run_gprps_check(4, 3, 4, 1, 2);    // 325, composite; non-decimal base
     gpu_throttle_config().verify_cpp_int = saved_verify_cpp_int;
-    std::cout << "GSRPS selftest: PASS\n";
+    std::cout << "GPRPS selftest: PASS\n";
 }
 
 void display_banner() {
-    printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════");
-    printf("%s\n","     .oooooo.         .oooooo..o     ooooooooo.       ooooooooo.        .oooooo..o      ");
-    printf("%s\n","    d8P'  `Y8b       d8P'    `Y8     `888   `Y88.     `888   `Y88.     d8P'    `Y8      ");
-    printf("%s\n","   888               Y88bo.           888   .d88'      888   .d88'     Y88bo.           ");
-    printf("%s\n","   888                `'Y8888o.       888ooo88P'       888ooo88P'       `'Y8888o.       ");
-    printf("%s\n","   888     ooooo          `'Y88b      888`88b.         888                  `'Y88b      ");
-    printf("%s\n","   `88.    .88'  .o. oo     .d8P .o.  888  `88b.  .o.  888         .o. oo     .d8P .o.  ");
-    printf("%s\n","    `Y8bood8P'   Y8P 8''88888P'  Y8P o888o  o888o Y8P o888o        Y8P 8''88888P'  Y8P  ");
-    printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════");
-    printf("%s\n","                       Generalized-Sierpinski/Riesel-Prime-Seeker                       ");
-    printf("%s\n","                           Version 2.3 CUDA by A.P. Sept 2026                           ");
+    printf("%s\n","\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220");
+    printf("%s\n","     .oooooo.        ooooooooo.      ooooooooo.       ooooooooo.       .oooooo..o      ");
+    printf("%s\n","    d8P'  `Y8b       `888   `Y88.    `888   `Y88.     `888   `Y88.    d8P'    `Y8      ");
+    printf("%s\n","   888                888   .d88'     888   .d88'      888   .d88'    Y88bo.           ");
+    printf("%s\n","   888                888ooo88P'      888ooo88P'       888ooo88P'      `'Y8888o.       ");
+    printf("%s\n","   888     ooooo      888             888`88b.         888                 `'Y88b      ");
+    printf("%s\n","   `88.    .88'  .o.  888        .o.  888  `88b.  .o.  888        .o. oo     .d8P .o.  ");
+    printf("%s\n","    `Y8bood8P'   Y8P o888o       Y8P o888o  o888o Y8P o888o       Y8P 8''88888P'  Y8P  ");
+    printf("%s\n","\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220");
+    printf("%s\n","                         Generalized-Proth/Riesel-Prime-Seeker                         ");
+    printf("%s\n","                           Version 2.4 CUDA by A.P. Sep 2026                           ");
 }
 
 void usage(const char* argv0) {
     display_banner();
     std::cout
-        << "GSRPS commands:\n"
+        << "GPRPS commands:\n"
         << "  " << argv0 << " --check <k*b^n+/-1> [Fermat-witness, default 2]\n"
         << "  " << argv0 << " --check <k> <b> <n> <c:+1|-1> [Fermat-witness, default 2]\n"
         << "  " << argv0 << " --checkpoint-info <checkpoint-file>\n"
@@ -4607,7 +4612,7 @@ void usage(const char* argv0) {
         << "  --force-window-bits <1..8>    disable automatic sliding-window selection\n"
         << "  --duty-percent <1..100>       full-check GPU duty cycle; default 100\n"
         << "  --verify-cpp-int               repeat --check independently with Boost cpp_int on CPU\n"
-        << "  --tuning-cache-dir <path>      persistent NTT tuning cache; default .gsrps_tuning_cache\n"
+        << "  --tuning-cache-dir <path>      persistent NTT tuning cache; default .gprps_tuning_cache\n"
         << "  --tuning-cache-max-age-hours N refresh cached tuning after N hours; default 24\n"
         << "  --no-tuning-cache              disable persistent NTT tuning cache\n"
         << "  --checkpoint <path>            save a portable SHA-256-protected check state\n"
@@ -4620,6 +4625,10 @@ void usage(const char* argv0) {
 #include "console_utf8.hpp"
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--engine-info") {
+        std::cout << "{\"format\":\"prime-seeker-engine-v1\",\"engine\":\"GPRPS\",\"version\":\"2.4\"}\n";
+        return 0;
+    }
     prp_console::initialize_utf8_output();
     std::cout.setf(std::ios::unitbuf);
     std::cerr.setf(std::ios::unitbuf);
@@ -4632,37 +4641,37 @@ int main(int argc, char** argv) {
             if (checkpoint_options().configured) {
                 throw std::runtime_error("runtime checkpoint options are not valid with --checkpoint-info");
             }
-            run_gsrps_checkpoint_info(argv[2]);
+            run_gprps_checkpoint_info(argv[2]);
             return 0;
         }
         if ((argc == 3 || argc == 4) && std::string(argv[1]) == "--check") {
-            const GsrpsExpression expression = parse_gsrps_expression(argv[2]);
-            run_gsrps_check(expression.k, expression.b, expression.n, expression.c,
+            const GprpsExpression expression = parse_gprps_expression(argv[2]);
+            run_gprps_check(expression.k, expression.b, expression.n, expression.c,
                             argc == 4 ? parse_u64(argv[3]) : 2);
             return 0;
         }
         if ((argc == 6 || argc == 7) && std::string(argv[1]) == "--check") {
-            run_gsrps_check(parse_u64(argv[2]), parse_u64(argv[3]), parse_u64(argv[4]),
+            run_gprps_check(parse_u64(argv[2]), parse_u64(argv[3]), parse_u64(argv[4]),
                             std::stoi(argv[5]), argc == 7 ? parse_u64(argv[6]) : 2);
             return 0;
         }
         if (argc == 2 && std::string(argv[1]) == "--selftest") {
-            run_gsrps_selftest();
+            run_gprps_selftest();
             return 0;
         }
         if (argc == 7 && std::string(argv[1]) == "--bench-square") {
-            run_bench_gsrps_full(parse_u64(argv[2]), parse_u64(argv[3]), parse_u64(argv[4]),
+            run_bench_gprps_full(parse_u64(argv[2]), parse_u64(argv[3]), parse_u64(argv[4]),
                                  std::stoi(argv[5]), std::stoi(argv[6]));
             return 0;
         }
         if (argc == 7 && std::string(argv[1]) == "--bench-mul") {
-            run_bench_gsrps_full(parse_u64(argv[2]), parse_u64(argv[3]), parse_u64(argv[4]),
+            run_bench_gprps_full(parse_u64(argv[2]), parse_u64(argv[3]), parse_u64(argv[4]),
                                  std::stoi(argv[5]), std::stoi(argv[6]), true);
             return 0;
         }
         usage(argv[0]);
         return 1;
-    } catch (const GsrpsInterrupted& e) {
+    } catch (const GprpsInterrupted& e) {
         std::cerr << "interrupted: " << e.what() << "\n";
         return 130;
     } catch (const std::exception& e) {

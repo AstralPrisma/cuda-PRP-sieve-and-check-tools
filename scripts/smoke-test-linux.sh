@@ -8,7 +8,7 @@ scratch="$(mktemp -d)"
 trap 'rm -rf -- "${scratch}"' EXIT
 
 "${bin_dir}/GFPS_${arch}" --selftest
-"${bin_dir}/GSRPS_${arch}" --selftest
+"${bin_dir}/GPRPS_${arch}" --selftest
 
 # GFPPS has explicit cpp_int reference checks rather than a --selftest mode.
 "${bin_dir}/GFPPS_${arch}" --check '1*3!+1' --verify-cpp-int | tee "${scratch}/gfpps-prime.log"
@@ -35,11 +35,11 @@ awk 'NF && $0 !~ /^#/' "${scratch}/gfnsv-direct.txt" > "${scratch}/gfnsv-direct-
 cmp "${scratch}/gfnsv-resume-bases.txt" "${scratch}/gfnsv-direct-bases.txt"
 "${bin_dir}/GFNSV_${arch}" --checkpoint-info "${scratch}/gfnsv-resume.txt"
 
-"${bin_dir}/GSRSV_${arch}" \
+"${bin_dir}/GPRSV_${arch}" \
   --kmin 1 --kmax 100 --base 2 --exp 100 --termtype 1 \
   --pmin 2 --pmax 10000 --cpu-small-prime 2 --prime-generator segmented \
-  --outputterms "${scratch}/gsrsv.txt" --verify --quiet
-test -f "${scratch}/gsrsv.txt"
+  --outputterms "${scratch}/gprsv.txt" --verify --quiet
+test -f "${scratch}/gprsv.txt"
 
 "${bin_dir}/GNCWSV_${arch}" \
   --amin 2 --amax 40 --base 3 --mode 1 \

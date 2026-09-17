@@ -11,10 +11,10 @@ The eight tools have independent component versions:
 | Tool | Current component version |
 | --- | ---: |
 | GFPS | 4.4 |
-| GSRPS | 2.3 |
+| GPRPS | 2.3 |
 | GFPPS | 1.0 |
 | GFNSV | 1.1 |
-| GSRSV | 2.1 |
+| GPRSV | 2.1 |
 | GNCWSV | 1.0 |
 | GHCWSV | 1.2 |
 | GHCWPS | 1.0 |
@@ -95,10 +95,10 @@ Current prepared coverage is:
 | Tool | `sm_86` | `sm_89` | `sm_100` | `sm_120` |
 | --- | :---: | :---: | :---: | :---: |
 | GFPS | built | built | built | built |
-| GSRPS | built | built | built | built |
+| GPRPS | built | built | built | built |
 | GFPPS | built | built | built | built |
 | GFNSV | built | built | built | built |
-| GSRSV | built | built | built | built |
+| GPRSV | built | built | built | built |
 | GNCWSV | built | built | built | built |
 
 Do not fill a missing cell by renaming an artifact from another target. Either
@@ -117,8 +117,8 @@ native SM variants for one operating system:
 ```text
 gfps-4.4-linux-x86_64-cuda13.3.tar.xz
 gfps-4.4-windows-x86_64-cuda13.3.zip
-gsrps-2.3-linux-x86_64-cuda13.3.tar.xz
-gsrps-2.3-windows-x86_64-cuda13.3.zip
+gprps-2.3-linux-x86_64-cuda13.3.tar.xz
+gprps-2.3-windows-x86_64-cuda13.3.zip
 gfpps-1.0-linux-x86_64-cuda13.3.tar.xz
 gfpps-1.0-windows-x86_64-cuda13.3.zip
 gfnsv-1.1-linux-x86_64-cuda13.3.tar.xz

@@ -109,7 +109,7 @@ cmake --build build --config Release --parallel 2
 需要 Ubuntu22.04 兼容性时，请在22.04或相应容器内构建；仅静态链接
 libstdc++ 并不能消除较新 glibc 的依赖。1.1验证见 VALIDATION_both_20260913.md；VALIDATION.md保留之前版本的验证范围。
 
-素数流水线和 Montgomery 模运算继承 GNCWSV / GSRSV；其 mtsieve 来源保留
+素数流水线和 Montgomery 模运算继承 GNCWSV / GPRSV；其 mtsieve 来源保留
 Mark Rodenkirch 等原作者信息。许可证 GPL-2.0-or-later。
 
 横幅规则：筛法在 main 开头打印；PRP 检查器仅 help/usage 打印。Windows 控制台使用 UTF-8，非 ASCII 横线以显式 UTF-8 字节表示。

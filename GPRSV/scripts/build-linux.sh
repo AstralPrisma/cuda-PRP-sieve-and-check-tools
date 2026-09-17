@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 tool_dir="$(cd -- "${script_dir}/.." && pwd)"
-src="${tool_dir}/src/GSRSV.cu"
+src="${tool_dir}/src/GPRSV.cu"
 out_dir="${1:-${tool_dir}/build}"
 if (( $# > 0 )); then shift; fi
 if (( $# > 0 )); then
@@ -28,5 +28,5 @@ cd "${tool_dir}"
 for arch in "${architectures[@]}"; do
   "${nvcc_bin}" -O3 -std=c++17 --threads 1 -arch="${arch}" \
     -Xcompiler=-pthread -ldl \
-    -o "${out_dir}/GSRSV_${arch}" src/GSRSV.cu
+    -o "${out_dir}/GPRSV_${arch}" src/GPRSV.cu
 done

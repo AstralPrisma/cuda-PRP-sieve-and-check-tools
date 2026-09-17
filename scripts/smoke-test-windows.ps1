@@ -25,7 +25,7 @@ function Invoke-Gfpps([string[]]$Arguments, [string]$Expected) {
 
 try {
     Invoke-Checked (Join-Path $binPath "GFPS_$Architecture.exe") @("--selftest")
-    Invoke-Checked (Join-Path $binPath "GSRPS_$Architecture.exe") @("--selftest")
+    Invoke-Checked (Join-Path $binPath "GPRPS_$Architecture.exe") @("--selftest")
     Invoke-Gfpps @("--check", "1*3!+1", "--verify-cpp-int") "PRP"
     Invoke-Gfpps @("--check", "3*5!+1", "--no-graphs", "--verify-cpp-int") "COMPOSITE"
     $gfppsCheckpoint = Join-Path $scratch "gfpps.ckpt"
@@ -52,11 +52,11 @@ try {
         throw "GFNSV resumed/full-root and direct/paired-root survivors differ"
     }
     Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @("--checkpoint-info", $resumePath)
-    Invoke-Checked (Join-Path $binPath "GSRSV_$Architecture.exe") @(
+    Invoke-Checked (Join-Path $binPath "GPRSV_$Architecture.exe") @(
         "--kmin", "1", "--kmax", "100", "--base", "2", "--exp", "100",
         "--termtype", "1", "--pmin", "2", "--pmax", "10000",
         "--cpu-small-prime", "2", "--prime-generator", "segmented",
-        "--outputterms", (Join-Path $scratch "gsrsv.txt"), "--verify", "--quiet"
+        "--outputterms", (Join-Path $scratch "gprsv.txt"), "--verify", "--quiet"
     )
     Invoke-Checked (Join-Path $binPath "GNCWSV_$Architecture.exe") @(
         "--amin", "2", "--amax", "40", "--base", "3", "--mode", "1",

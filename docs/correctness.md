@@ -6,7 +6,7 @@ search.
 
 ## PRP is not a primality proof
 
-GFPS, GSRPS, and GFPPS perform probable-prime checks. Passing such a check means that a
+GFPS, GPRPS, and GFPPS perform probable-prime checks. Passing such a check means that a
 candidate satisfies the implemented congruence for the selected witness. It
 does not constitute a deterministic proof that the candidate is prime.
 
@@ -48,9 +48,9 @@ d[i] = 1-b/2, i > 0
 for that class. Checkpoints authenticate their metadata and digits and validate
 the ordinary or special digit range before resuming.
 
-### GSRPS
+### GPRPS
 
-GSRPS checks `N = k*b^n+c`, where `c` is `+1` or `-1`. Its accepted production
+GPRPS checks `N = k*b^n+c`, where `c` is `+1` or `-1`. Its accepted production
 path uses integer NTT/CRT arithmetic and exact carry/reduction logic. Runtime
 tuning parameters such as NTT block count and window size change scheduling and
 performance, not the intended modular result.
@@ -79,11 +79,11 @@ error detection; independently recheck meaningful hits.
 
 ## Siever semantics
 
-GFNSV, GSRSV, and GNCWSV remove candidates for which they find a factor in the requested
+GFNSV, GPRSV, and GNCWSV remove candidates for which they find a factor in the requested
 prime interval. A surviving term has only survived that sieve range.
 
 - A reported factor should exactly divide the displayed candidate.
-- Use `--verify` for GSRSV/GNCWSV when validating a build or changing kernels;
+- Use `--verify` for GPRSV/GNCWSV when validating a build or changing kernels;
   GFNSV verifies factors on the CPU by default unless `--no-verify` is supplied.
 - Compare uninterrupted and resumed runs over small ranges.
 - Preserve the input, output header, prime bounds, factors file, and command
@@ -107,16 +107,16 @@ Every release candidate should pass the following checks before publication.
 
 ### Checker tests
 
-1. Run the built-in GFPS and GSRPS self-tests.
+1. Run the built-in GFPS and GPRPS self-tests.
 2. Compare small exact cases against an independent big-integer calculation.
-3. Test both signs in GSRPS and both square/multiply branches used by each
+3. Test both signs in GPRPS and both square/multiply branches used by each
    checker.
 4. Compare known prefix checksums before and after every arithmetic
    optimization.
 5. For GFPS, exercise three-prime and four-prime paths, both exponent-bit
    variants, the even-base special residue, checkpoint save/resume, corrupted
    checkpoint rejection, and insufficient-CRT rejection.
-6. For GSRPS, exercise automatic and forced NTT blocks, automatic and forced
+6. For GPRPS, exercise automatic and forced NTT blocks, automatic and forced
    windows, CUDA Graph enabled/disabled paths, and any persistent tuning cache.
 7. Complete at least one end-to-end composite check with an unchanged expected
    final residue. Independently repeat any PRP hit.

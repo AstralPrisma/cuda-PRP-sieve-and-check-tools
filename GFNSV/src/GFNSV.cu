@@ -290,7 +290,7 @@ static void usage() {
       <<"  --root-pairs       paired roots r and -r (default, faster)\n"
       <<"  --full-roots       enumerate every root (reference path)\n"
       <<"  -q, --quiet        hide progress; checkpoint/final messages remain\n"
-      <<"Lowest acceptable efficiency (supply all three, same units as GSRSV):\n"
+      <<"Lowest acceptable efficiency (supply all three, same units as GPRSV):\n"
       <<"  -4, --max-factor-seconds S          stop after S seconds with no new removal\n"
       <<"  -5, --max-average-factor-seconds S  stop when rolling seconds/removal exceeds S\n"
       <<"      --spftarget S                   alias for -5\n"

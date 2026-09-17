@@ -1,10 +1,10 @@
-// Direct device inverse oracle for isolated GSRSV product-path experiments.
+// Direct device inverse oracle for isolated GPRSV product-path experiments.
 // Compile and run explicitly; this file never starts a sieve or touches queues.
-#ifndef GSRSV_SOURCE
-#define GSRSV_SOURCE "../src/GSRSV.cu"
+#ifndef GPRSV_SOURCE
+#define GPRSV_SOURCE "../src/GPRSV.cu"
 #endif
-#define main gsrsv_app_main
-#include GSRSV_SOURCE
+#define main gprsv_app_main
+#include GPRSV_SOURCE
 #undef main
 
 #include <random>
@@ -53,7 +53,7 @@ static uint64_t next_prime(uint64_t start) {
         if (n > CAP - 2) break;
         n += 2;
     }
-    throw std::runtime_error("no next audit prime inside GSRSV limit");
+    throw std::runtime_error("no next audit prime inside GPRSV limit");
 }
 
 static uint64_t previous_prime(uint64_t start) {
@@ -97,7 +97,7 @@ static Group real_group(TermType kind, uint32_t n) {
     if (result.real_primorial) {
         result.original_primes = independent_primes(n);
         require(!result.original_primes.empty() && result.original_primes.back() == n,
-                "GSRSV primorial endpoint must itself be prime");
+                "GPRSV primorial endpoint must itself be prime");
     }
     return result;
 }
@@ -282,7 +282,7 @@ static size_t run_group(const Group& group, uint64_t& digest) {
 int main(int argc, char** argv) {
     (void)argv;
     if (argc != 1) {
-        std::cerr << "No run-time arguments. Choose GSRSV_SOURCE at compilation; this harness never starts a sieve.\n";
+        std::cerr << "No run-time arguments. Choose GPRSV_SOURCE at compilation; this harness never starts a sieve.\n";
         return 2;
     }
     std::signal(SIGINT, twinsieve_cuda::handle_interrupt);
@@ -298,7 +298,7 @@ int main(int argc, char** argv) {
         cudaDeviceProp properties{};
         CUDA_CHECK(cudaGetDevice(&device));
         CUDA_CHECK(cudaGetDeviceProperties(&properties, device));
-        std::cout << "{\"event\":\"start\",\"source\":" << inverse_audit::quote(GSRSV_SOURCE)
+        std::cout << "{\"event\":\"start\",\"source\":" << inverse_audit::quote(GPRSV_SOURCE)
                   << ",\"device\":" << inverse_audit::quote(properties.name)
                   << ",\"groups\":" << all.size() << ",\"max_primes_per_group\":256,\"cpu_threads\":1}\n" << std::flush;
         size_t cases = 0;

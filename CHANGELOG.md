@@ -39,7 +39,7 @@
 - Reuse the other 40 binaries from v2026.09.8 with their original provenance.
   GFPS's experimental 5090 optimization is not included in this promotion.
 
-## v2026.09.8 - GSRSV 2.1 factorial/primorial acceleration
+## v2026.09.8 - GPRSV 2.1 factorial/primorial acceleration
 
 - Replaced repeated packed-chunk remainders and Montgomery conversions with
   exact pre-seeded raw-chunk multiplication; simplified product-only REDC carry.
@@ -48,7 +48,7 @@
   unchanged. Prime 2 and small 32-bit products retain their previous path.
 - Added independent integer and direct GPU inverse regression utilities;
   corrected the primorial example to use a prime endpoint.
-- Rebuilt eight GSRSV binaries for Windows/Linux and four SM targets. Other
+- Rebuilt eight GPRSV binaries for Windows/Linux and four SM targets. Other
   forty executables are reused from v2026.09.7 with original build provenance.
 - Sieve distribution remains in GitHub; separate PRPNet client ZIPs omit sieves.
 
@@ -57,7 +57,7 @@
 - GFNSV 1.1 writes self-contained v4 GFN/ABC/base/expression snapshots with
   bounded resume metadata, ordered survivors, and count/SHA-256 validation.
   The main file alone resumes across Windows/Linux; factor logs are optional.
-- Added GSRSV-style short options, periodic survivor/progress/ETA output, and
+- Added GPRSV-style short options, periodic survivor/progress/ETA output, and
   the combined `-4`/`-5`/`-6` efficiency limits. Efficiency-controlled runs
   override `pmax` and save their completed prefix when stopping normally.
 - Legacy CUDA v3 checkpoints and validated old GFN/ABC plus v3 companion pairs
@@ -96,19 +96,19 @@
   safe Ctrl+C handling, and default 100,000-bit progress. There is no implicit
   checkpoint file, PRPNet integration, or deterministic proof generation.
 - Build, smoke, and release packaging scripts now cover six tools and all
-  source/header hashes. GSRPS 2.3, GFNSV 1.0, GSRSV 2.0, and GNCWSV 1.0
+  source/header hashes. GPRPS 2.3, GFNSV 1.0, GPRSV 2.0, and GNCWSV 1.0
   retain their component versions.
 - Published validation distinguishes complete PRP checks from million-digit
   GFPPS prefix timing extrapolations and cross-compiled GPU architectures.
 
-## v2026.09.4 - GFPS 4.1, GSRPS 2.3, and GFNSV CUDA 1.0
+## v2026.09.4 - GFPS 4.1, GPRPS 2.3, and GFNSV CUDA 1.0
 
 - GFPS 4.1 enables half-length negacyclic NTT, DIF/DIT and shared-memory kernel
   fusion, plus checked carry batches with whole-batch adaptive replay.
   `--reference-mode`, `--batch-bits`, and diagnostic replay controls support
   direct result comparisons. Windows duty throttling now waits after short
   work windows instead of rounding a delay after every square.
-- GSRPS 2.3 enables condition-checked weighted division scans and compact carry
+- GPRPS 2.3 enables condition-checked weighted division scans and compact carry
   reduction, preserving exact fallback behavior for other arithmetic shapes.
 - Added GFNSV CUDA 1.0 for generalized Fermat interval sieving, with paired-root
   enumeration, default CPU factor verification, and saved-state continuation.
@@ -131,11 +131,11 @@
 - GFPS now saves the latest safe main checkpoint when interrupted and exits
   with status 130; interrupted tasks remain available for resume and are not
   submitted or released as completed.
-- GFPS and GSRPS now flush redirected output in real time on Windows. This fixes
-  delayed GSRPS progress/checkpoint output and makes GFPS interruption visible
+- GFPS and GPRPS now flush redirected output in real time on Windows. This fixes
+  delayed GPRPS progress/checkpoint output and makes GFPS interruption visible
   throughout the three-layer client process tree.
 
-## 2026-09-04 - GSRPS arithmetic checkpoints
+## 2026-09-04 - GPRPS arithmetic checkpoints
 
 - Added portable, SHA-256-protected `GSRPCK1` checkpoints for CUDA `--check`
   runs, including periodic saves, completion saves, checkpoint inspection, and
@@ -160,8 +160,8 @@
 ## 2026-09-03 - Initial public source release
 
 - GFPS 4.0: CUDA probable-prime testing for generalized Fermat numbers.
-- GSRPS 2.0: CUDA probable-prime testing for generalized Sierpinski/Riesel forms.
-- GSRSV 2.0: CUDA sieve for generalized Sierpinski/Riesel, primorial, and factorial forms.
+- GPRPS 2.0: CUDA probable-prime testing for generalized Proth/Riesel forms.
+- GPRSV 2.0: CUDA sieve for generalized Proth/Riesel, primorial, and factorial forms.
 - GNCWSV 1.0: CUDA sieve for generalized Cullen/Woodall and near Cullen/Woodall forms.
 - Added reproducible Linux/WSL and Windows build scripts for `sm_86`, `sm_89`,
   `sm_100`, and `sm_120`.

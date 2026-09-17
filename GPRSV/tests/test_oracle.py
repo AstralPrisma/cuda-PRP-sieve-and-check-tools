@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-import gsrsv_oracle as oracle
+import gprsv_oracle as oracle
 
 
 class OracleTests(unittest.TestCase):

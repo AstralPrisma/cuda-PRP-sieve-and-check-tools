@@ -4,8 +4,8 @@ param(
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
-    [ValidateSet('GFPS','GSRPS','GFPPS','GFNSV','GSRSV','GNCWSV','GHCWSV','GHCWPS')]
-    [string[]]$Tools = @('GFPS','GSRPS','GFPPS','GFNSV','GSRSV','GNCWSV','GHCWSV','GHCWPS')
+    [ValidateSet('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS')]
+    [string[]]$Tools = @('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS')
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,10 +17,10 @@ $stagingPath = Join-Path $releaseRoot "package-staging"
 $architectures = @("sm_86", "sm_89", "sm_100", "sm_120")
 $versions = [ordered]@{
     GFPS = "4.4"
-    GSRPS = "2.3"
+    GPRPS = "2.4"
     GFPPS = "1.0"
     GFNSV = "1.1"
-    GSRSV = "2.1"
+    GPRSV = "2.2"
     GNCWSV = "1.0"
     GHCWSV = "1.2"
     GHCWPS = "1.0"
