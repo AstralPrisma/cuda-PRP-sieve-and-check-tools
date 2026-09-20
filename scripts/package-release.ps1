@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.09.12",
+    [string]$SuiteVersion = "v2026.09.13",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
@@ -16,14 +16,14 @@ $releaseRoot = [IO.Path]::GetFullPath((Join-Path $repoDirectory "release-assets"
 $stagingPath = Join-Path $releaseRoot "package-staging"
 $architectures = @("sm_86", "sm_89", "sm_100", "sm_120")
 $versions = [ordered]@{
-    GFPS = "4.4"
+    GFPS = "4.5"
     GPRPS = "2.4"
     GFPPS = "1.0"
     GFNSV = "1.1"
     GPRSV = "2.2"
-    GNCWSV = "1.0"
+    GNCWSV = "1.2.0"
     GHCWSV = "1.2"
-    GHCWPS = "1.0"
+    GHCWPS = "1.2"
 }
 $selected = [ordered]@{}
 foreach ($tool in $Tools) { $selected[$tool] = $versions[$tool] }
@@ -178,6 +178,14 @@ try {
                     sha256 = Get-Sha256 $sourceBinary
                     runtime_tested = $binaryMetadata.runtime_tested
                     evidence = $binaryMetadata.evidence
+                }
+            }
+
+            if ($tool -eq "GNCWSV" -and $platform -eq "windows") {
+                foreach ($runtimeName in @("primesieve.dll", "COPYING.primesieve")) {
+                    $runtimePath = Join-Path (Join-Path $rawPath $platform) $runtimeName
+                    if (-not [IO.File]::Exists($runtimePath)) { throw "Missing GNCWSV runtime: $runtimeName" }
+                    [IO.File]::Copy($runtimePath, (Join-Path $binStage $runtimeName), $true)
                 }
             }
 

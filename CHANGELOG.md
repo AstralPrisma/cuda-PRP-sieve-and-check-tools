@@ -1,3 +1,10 @@
+# 2026.09.13
+
+- GFPS4.5: remove the provably zero highest quotient digit in large-base reciprocal division; retain general input support and exact correction.
+- GHCWPS1.2: checkpoint-compatible15/18/21-bit adaptive arithmetic with exact safety bounds and measured device/transform policies.
+- GNCWSV1.2.0: shared multi-mode prime generation, safe per-chunk fast44 selection and sparse-workset coordinator tuning.
+- Native Windows/Linux sm86/89/100/120 builds; runtime evidence is recorded separately for physically tested targets. Other components unchanged.
+
 # 2026.09.12
 
 - GHCWSV 1.2 adapts GNCWSV's 20%-smaller workset trigger to refresh GPU prime batches, while a separate producer batch preserves every unprocessed tail.

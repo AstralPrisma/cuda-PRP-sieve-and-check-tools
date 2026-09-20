@@ -12,7 +12,18 @@ near-Cullen/Woodall families with a fixed base `b` and variable coefficient `a`.
 | 5 | `a*b^(a+1) + 1` | Near Cullen, first kind; `(n-1)*b^n+1` |
 | 6 | `a*b^(a-1) + 1` | Near Cullen, second kind; `(n+1)*b^n+1` |
 
-The current source version is 1.0.
+The current source version is 1.2.0.
+
+Multiple modes may share one prime producer: `-m 34`, `-m 135`, or `-m 3456`.
+Saved multi-mode snapshots retain a common fully completed prime boundary.
+The coordinator chooses64K prime groups only for the validated sparse RTX4060
+workset profile; other layouts retain32K. Use `--gpu-prime-chunk auto|N` for
+controlled comparisons. Fast44 arithmetic is selected per actual internal chunk
+below2^44, and mixed/crossing chunks use the generic path. `--montgomery generic`
+provides a reference selection. Snapshot integrity and independent factor checks
+are unchanged. Measured sparse b77 jobs improved about19–21%; this is not a fixed
+speedup for every range. Windows packages include the optional primesieve12.10
+runtime beside the executables; Linux may use the system libprimesieve library.
 
 > 中文：GNCWSV 用 GPU 筛选固定底数、变化系数的广义 Cullen/Woodall 及四类 Near Cullen/Woodall 数。`--mode 1..6` 选择数型。
 

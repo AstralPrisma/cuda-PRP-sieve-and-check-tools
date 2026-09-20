@@ -4,7 +4,7 @@ This repository collects eight CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
 
-The [v2026.09.12 release](docs/releases/v2026.09.12.md) updates GHCWSV to 1.2: adaptive GPU batches after candidate compaction, independent prime-producer batches, and explicit recent throughput. The bounded fresh-range RTX4060 Laptop test is about 4.5x faster; already sparse continuation has no clear speedup. Other seven tools are unchanged.
+The [v2026.09.13 release](docs/releases/v2026.09.13.md) updates GFPS to4.5, GHCWPS to1.2 and GNCWSV to1.2.0. It adds general division simplification, safe adaptive PRP radix selection and multi-mode/sparse-workset sieve scheduling. Other components are unchanged. Performance and physical-GPU coverage are documented per workload, not claimed universally.
 
 The [v2026.09.11 release](docs/releases/v2026.09.11.md) adds `--sign both` to GHCWSV 1.1, including sign-preserving checkpoints and conversion. Other seven tools are unchanged.
 
@@ -28,14 +28,14 @@ executables; GFPS's separate experimental optimization is not promoted.
 
 | Directory | Version | Purpose |
 | --- | ---: | --- |
-| [`GFPS/`](GFPS/) | 4.4 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
+| [`GFPS/`](GFPS/) | 4.5 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
 | [`GPRPS/`](GPRPS/) | 2.4 | Checks generalized Proth/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
 | [`GFPPS/`](GFPPS/) | 1.0 | Checks generalized factorial/primorial candidates `k*n!+/-1` and `k*n#+/-1`. |
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
 | [`GPRSV/`](GPRSV/) | 2.2 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
-| [`GNCWSV/`](GNCWSV/) | 1.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
+| [`GNCWSV/`](GNCWSV/) | 1.2.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
 | [`GHCWSV/`](GHCWSV/) | 1.2 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
-| [`GHCWPS/`](GHCWPS/) | 1.0 | Checks the same family with NTT arithmetic and safe checkpoints. |
+| [`GHCWPS/`](GHCWPS/) | 1.2 | Checks the same family with NTT arithmetic and safe checkpoints. |
 
 ## 中文简介
 
@@ -59,7 +59,7 @@ before selecting a search range. Its actual base ceiling depends on `n`, not
 just the `b < 2^63` storage limit. **Current production modes support only
 `1 <= n <= 20`; inputs with `n > 20` are not supported.**
 
-GFPS 4.4 retains half-length negacyclic NTT and checked carry batches, and
+GFPS 4.5 retains half-length negacyclic NTT and checked carry batches, and
 fuses carry rotation, convergence checking, and RNS export for 100%-duty
 batches. GPRPS 2.4 uses condition-checked weighted scans and compact carry
 reduction, retaining the exact fallback where required. GFNSV 1.1 provides GPU

@@ -1187,8 +1187,10 @@ __device__ U128 d_divmod_u128_u64(U128 a, uint64_t d, double inv_d, uint64_t& re
             static_cast<uint32_t>(a.hi >> 32),
         };
         uint32_t q[4] = {};
-        uint64_t r = 0;
-        for (int i = 3; i >= 0; --i) {
+        // Here d > UINT32_MAX: the top numerator limb is strictly below d.
+        // Its quotient digit is exactly zero; seed the remainder directly.
+        uint64_t r = limbs[3];
+        for (int i = 2; i >= 0; --i) {
             const U128 cur{(r << 32) | limbs[i], r >> 32};
 #if GFPS_USE_RECIPROCAL_DIV
             uint64_t qi = static_cast<uint64_t>(
@@ -4515,7 +4517,7 @@ void display_banner() {
     printf("%s\n","           `Y8bood8P'   Y8P o888o        Y8P o888o        Y8P 8''88888P'  Y8P           ");
     printf("%s\n","════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                            Generalized-Fermat-Primes-Seeker                            ");
-    printf("%s\n","                           Version 4.4 CUDA by A.P. Sept 2026                           ");
+    printf("%s\n","                           Version 4.5 CUDA by A.P. Sept 2026                           ");
 }
 
 void usage(const char* argv0) {
@@ -4569,6 +4571,8 @@ int main(int argc, char** argv) {
         argc = static_cast<int>(filtered_argv.size());
         argv = filtered_argv.data();
         print_gpu_throttle_config();
+        if(argc==2 && std::string(argv[1])=="--version") {std::cout<<"GFPS 4.5\n";return 0;}
+        if(argc==2 && (std::string(argv[1])=="--help" || std::string(argv[1])=="-h")) {usage(argv[0]);return 0;}
         if (argc == 2 && std::string(argv[1]) == "--selftest") {
             run_selftest();
             return 0;

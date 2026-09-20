@@ -1,4 +1,10 @@
-# GHCWPS 1.0
+# GHCWPS 1.2
+
+新增 `--radix-bits auto|15|18|21`，默认按精确 CRT/进位上界及已验证的显卡区间选择。
+现有15/18-bit断点继续按原位宽恢复，21-bit断点使用独立格式标记。
+不满足范围或没有明确收益时保留原路径；21-bit不适合当前百万位规模。
+本机约18.9万位完整对照中，21-bit减少一个NTT长度档位，吞吐提高约40%；
+该结果不能推广为全部输入或全部显卡的固定提升。
 
 Generalized Hyper-Cullen / Woodall Prime Seeker, by A.P., Sept 2026.
 

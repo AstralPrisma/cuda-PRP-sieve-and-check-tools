@@ -1,4 +1,11 @@
-# GFPS 4.4
+# GFPS 4.5
+
+This general-purpose release removes a redundant leading quotient digit in the
+large-base reciprocal division path. Exact correction, CRT bounds, checkpoint
+format and the supported input range are unchanged. Windows RTX4060 tests around
+million-digit GFN16 inputs measured approximately5–6% higher throughput; gains
+depend on the GPU and workload. Selftests, division-boundary inputs, old checkpoint
+resume and authenticated-state rejection were checked.
 
 GFPS is a CUDA probable-prime checker for generalized Fermat numbers
 

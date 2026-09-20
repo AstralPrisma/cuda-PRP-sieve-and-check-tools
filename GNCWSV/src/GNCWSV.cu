@@ -49,6 +49,9 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <filesystem>
+#include <set>
+#include "sha256.hpp"
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -56,6 +59,8 @@
 #include <windows.h>
 #elif defined(__unix__) || defined(__APPLE__)
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
@@ -65,8 +70,8 @@ namespace gncw_cuda {
 constexpr uint64_t PMAX_MAX = (UINT64_C(1) << 62) - 1;
 constexpr uint32_t BMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint64_t AMAX_MAX = UINT64_C(0xfffffffe); // keeps a+1 in uint32 range
-constexpr const char* APP_VERSION = "1.0";
-constexpr const char* BUILD_ID = "20260812-1140-v13c";
+constexpr const char* APP_VERSION = "1.2.0";
+constexpr const char* BUILD_ID = "20260920-local-fast44-groups";
 enum class PrimeMode : int { Auto = 0, PrimeSieve, Segmented, MillerRabin };
 enum class GncwMode : int {
     Unknown = 0,
@@ -87,6 +92,9 @@ struct Options {
     bool base_explicit = false;
     GncwMode mode = GncwMode::Unknown;
     bool mode_explicit = false;
+    uint32_t mode_mask = 0;
+    bool cpu_reference = false;
+    uint32_t checkpoint_seconds = 60;
 
     uint64_t min_prime = 1;          // primes p satisfy min_prime < p
     uint64_t max_prime = PMAX_MAX;   // and p <= max_prime
@@ -102,6 +110,8 @@ struct Options {
     int device = 0;
     int threads = 256;               // one CUDA block cooperates on one prime
     uint32_t sparse_hot_gaps = 6;    // compact path: specialized shared cache; RTX 4060 benchmark sweet spot; allowed 0,2,4,6,8,12,16
+    uint32_t gpu_prime_chunk = 0; // auto: validated sm89/24SM sparse profile, baseline elsewhere
+    bool force_generic_mont = false;
     int blocks = 0;                  // 0 = SM count * 8 resident/grid blocks
     uint64_t batch_primes = UINT64_C(1) << 18;
     uint64_t cpu_small_prime = 2;    // p=2 is structural after parity normalization
@@ -257,6 +267,28 @@ static std::string option_value(int& i, int argc, char** argv, const std::string
     return argv[++i];
 }
 
+static uint32_t parse_mode_selection(const std::string& text) {
+    if (text.empty() || text.size() > 6) fail("--mode requires distinct digits 1..6, e.g. 34, 135, 3456");
+    uint32_t mask = 0;
+    for (const char c : text) {
+        if (c < '1' || c > '6') fail("--mode accepts only digits 1..6");
+        const uint32_t bit = 1U << (c - '1');
+        if (mask & bit) fail("Repeated digit in --mode selection");
+        mask |= bit;
+    }
+    return mask;
+}
+static std::string mode_selection_text(uint32_t mask) {
+    std::string result;
+    for (int n = 1; n <= 6; ++n) if (mask & (1U << (n - 1))) result += char('0' + n);
+    return result;
+}
+static void set_mode_selection(Options& o, const std::string& text) {
+    o.mode_mask = parse_mode_selection(text);
+    o.mode = static_cast<GncwMode>(mode_selection_text(o.mode_mask).front() - '0');
+    o.mode_explicit = true;
+}
+
 static void parse_options(int argc, char** argv, Options& o) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -265,6 +297,7 @@ static void parse_options(int argc, char** argv, Options& o) {
         if (arg == "--applyandexit") { o.apply_and_exit = true; continue; }
         if (arg == "--verify") { o.verify_factors = true; continue; }
         if (arg == "--quiet") { o.quiet = true; continue; }
+        if (arg == "--cpu-reference") { o.cpu_reference = true; continue; }
 
         auto is_long = [&](const char* name) {
             std::string n(name);
@@ -295,11 +328,11 @@ static void parse_options(int argc, char** argv, Options& o) {
             o.base = static_cast<uint32_t>(parse_u64(option_value(i, argc, argv, arg), 2, BMAX_MAX, "base"));
             o.base_explicit = true;
         } else if (arg.rfind("-m", 0) == 0 && arg.rfind("--", 0) != 0) {
-            o.mode = static_cast<GncwMode>(parse_int(short_value('m'), 1, 6, "mode"));
-            o.mode_explicit = true;
+            set_mode_selection(o, short_value('m'));
         } else if (is_long("--mode")) {
-            o.mode = static_cast<GncwMode>(parse_int(option_value(i, argc, argv, arg), 1, 6, "mode"));
-            o.mode_explicit = true;
+            set_mode_selection(o, option_value(i, argc, argv, arg));
+        } else if (is_long("--checkpoint-seconds")) {
+            o.checkpoint_seconds = static_cast<uint32_t>(parse_int(option_value(i, argc, argv, arg), 1, 86400, "checkpoint-seconds"));
         } else if (arg.rfind("-p", 0) == 0 && arg.rfind("--", 0) != 0) {
             o.min_prime = parse_u64(short_value('p'), 1, PMAX_MAX, "pmin");
             o.min_prime_explicit = true;
@@ -336,6 +369,13 @@ static void parse_options(int argc, char** argv, Options& o) {
             o.device = parse_int(option_value(i, argc, argv, arg), 0, 255, "device");
         } else if (is_long("--threads")) {
             o.threads = parse_int(option_value(i, argc, argv, arg), 32, 1024, "threads");
+        } else if (is_long("--gpu-prime-chunk")) {
+            const auto value=option_value(i, argc, argv, arg);
+            o.gpu_prime_chunk=value=="auto"?0:static_cast<uint32_t>(parse_u64(value, 128, 262144, "gpu-prime-chunk"));
+        } else if (is_long("--montgomery")) {
+            const auto value=option_value(i, argc, argv, arg);
+            if(value!="auto" && value!="generic")fail("--montgomery must be auto or generic");
+            o.force_generic_mont=value=="generic";
         } else if (is_long("--hot-gaps")) {
             const uint64_t h = parse_u64(option_value(i, argc, argv, arg), 0, 16, "hot-gaps");
             if (!(h == 0 || h == 2 || h == 4 || h == 6 || h == 8 || h == 12 || h == 16))
@@ -391,7 +431,9 @@ static void print_help() {
         << "  -a, --amin A0            minimum a\n"
         << "  -A, --amax A1            maximum a\n"
         << "  -b, --base B              fixed base b\n"
-        << "  -m, --mode {1|2|3|4|5|6}  one of the six forms above\n"
+        << "  -m, --mode DIGITS         select 1..6; 34, 135, 3456, 123456 combine modes\n"
+        << "      --checkpoint-seconds N  multi-mode atomic checkpoint interval (default 60)\n"
+        << "      --cpu-reference       bounded host-only correctness test; no CUDA calls\n"
         << "  -p, --pmin P0             test primes p > P0\n"
         << "  -P, --pmax P1             test primes p <= P1 (e.g. 1e12)\n"
         << "  -i, --inputterms FILE     resume from plain expression-per-line file\n"
@@ -403,11 +445,14 @@ static void print_help() {
         << "  879536*3^879537-1\n"
         << "  864194*3^864195+1\n"
         << "Output starts with a '# GNCWSV ...' resume header, then one expression per line.\n"
-        << "All '#' comment lines are ignored while reading candidate expressions.\n\n"
+        << "Multi-mode files record modes/count/shared p and SHA-256; resume checks them strictly.\n"
+        << "Single-mode legacy files remain supported. A multi-mode resume must keep the saved selection.\n\n"
         << "CUDA / prime-generation options:\n"
         << "      --device D             CUDA device index (default 0)\n"
         << "      --threads T            CUDA threads/block; dense uses a block/prime, compact a thread/prime (default 256)\n"
         << "      --hot-gaps H           compact shared hot-gap specialization: 0, 2, 4, 6, 8, 12, or 16 (default 6)\n"
+        << "      --gpu-prime-chunk N    shared-mode GPU group size: auto(default) or128..262144\n"
+        << "      --montgomery MODE     auto (per-chunk fast44) or generic (comparison)\n"
         << "      --blocks B             grid blocks; 0=auto (8/SM dense, 24/SM compact)\n"
         << "  -w, --batch-primes N       primes per producer batch (default 262144)\n"
         << "      --cpu-small-prime P    CPU handles p <= P (default 2)\n"
@@ -2562,6 +2607,10 @@ struct GpuCompletion {
     double total_device_ms = 0.0;
 };
 
+static uint64_t fast44_dispatches=0,generic_dispatches=0;
+static void print_mont_dispatches() {
+    std::cout<<"Montgomery dispatch: fast44_chunks="<<fast44_dispatches<<", generic_chunks="<<generic_dispatches<<"\n";
+}
 class GpuSieve {
 public:
     explicit GpuSieve(Problem& pr) : p_(pr) {
@@ -2616,10 +2665,10 @@ public:
             sparse_max_gap_ = unique_gaps.empty() ? 0U : unique_gaps.back();
             sparse_direct_gap8_ = sparse_max_gap_ != 0 && sparse_max_gap_ <= 255U;
             // v13 fast44 is implemented in the direct-gap sparse kernel.  It is
-            // exact for the full run whenever maxP < 2^44; larger ranges and
-            // non-u8 gap worksets retain the proven generic 2x32 path.
+            // eligible for each chunk whose actual upper prime is <2^44.
+            // The final requested pmax must not disable fast arithmetic early.
             sparse_fast44_ = sparse_direct_gap8_ &&
-                             p_.opt.max_prime < (UINT64_C(1) << 44);
+                             !p_.opt.force_generic_mont;
             sparse_hot_transitions_ = 0;
             if (sparse_direct_gap8_) {
                 for (uint32_t g : gaps)
@@ -2701,7 +2750,7 @@ public:
                 std::cout << ", gap classes=" << sparse_gap_count_ << ", max gap=" << sparse_max_gap_
                           << ", gap table=x-only"
                           << (sparse_direct_gap8_ ? "/u8-direct" : "/class")
-                          << ", mont=" << (sparse_fast44_ ? "fast44-3limb" : "2x32");
+                          << ", mont=" << (sparse_fast44_ ? "auto-fast44-per-chunk/2x32" : "2x32");
                 if (sparse_direct_gap8_) {
                     const uint64_t transitions = sparse_active_count_ > 0 ? sparse_active_count_ - 1 : 0;
                     const double hot_pct = transitions != 0
@@ -2742,6 +2791,9 @@ public:
     uint64_t direct_pinned_batches() const { return direct_pinned_batches_; }
     uint64_t fallback_staged_batches() const { return fallback_staged_batches_; }
     bool sparse_mode() const { return sparse_mode_; }
+    bool validated_64k_group() const {
+        return prop_.major==8 && prop_.minor==9 && prop_.multiProcessorCount==24 && sparse_mode_ && sparse_direct_gap8_;
+    }
     uint64_t sparse_active_count() const { return sparse_active_count_; }
 
     bool should_rebuild_compact(uint64_t remaining) const {
@@ -2834,8 +2886,11 @@ public:
                         case 16: GNCWSV_LAUNCH_HOT_F(16, F); break; \
                         default: fail("Internal error: invalid --hot-gaps specialization"); \
                     }
-                    if (sparse_fast44_) { GNCWSV_DISPATCH_HOT(true); }
-                    else { GNCWSV_DISPATCH_HOT(false); }
+                    // PrimeBatch spans are ordered. A mixed threshold chunk
+                    // conservatively uses the generic kernel for its entirety.
+                    const bool fast44=sparse_fast44_ && primes[done+chunk-1]<(UINT64_C(1)<<44);
+                    if (fast44) { ++fast44_dispatches;GNCWSV_DISPATCH_HOT(true); }
+                    else { ++generic_dispatches;GNCWSV_DISPATCH_HOT(false); }
 #undef GNCWSV_DISPATCH_HOT
 #undef GNCWSV_LAUNCH_HOT_F
                 } else {
@@ -3077,9 +3132,24 @@ static std::string format_eta_finish_time(double eta_seconds) {
     if (localtime_r(&finish_time, &local_tm) == nullptr) return {};
 #endif
     char buffer[64]{};
+#if defined(_WIN32)
+    // MSVC strftime("%Z") can return an ANSI-encoded localized zone name.
+    // Use an ASCII UTC offset so redirected progress remains valid UTF-8.
+    if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &local_tm) == 0)
+        return {};
+    std::tm wall_as_utc = local_tm;
+    const auto offset = static_cast<long long>(_mkgmtime64(&wall_as_utc))
+                      - static_cast<long long>(finish_time);
+    const auto magnitude = offset < 0 ? -offset : offset;
+    std::ostringstream zone;
+    zone << buffer << " UTC" << (offset < 0 ? '-' : '+') << std::setfill('0')
+         << std::setw(2) << magnitude / 3600 << ':' << std::setw(2) << (magnitude / 60) % 60;
+    return zone.str();
+#else
     if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M %Z", &local_tm) == 0)
         return {};
     return buffer;
+#endif
 }
 
 static double estimate_eta_seconds(uint64_t current, uint64_t pmax, double p_range_per_second) {
@@ -3418,6 +3488,8 @@ static uint64_t run_sieve(Problem& p) {
     return largest_prime;
 }
 
+#include "gncw_multi.hpp"
+
 } // namespace gncw_cuda
 
 void display_banner() {
@@ -3431,7 +3503,7 @@ void display_banner() {
     printf("%s\n","       `Y8bood8P'   Y8P o8o        `8  Y8P  `Y8bood8P'  Y8P     `8'      `8'     Y8P 8''88888P'  Y8P     `8'     Y8P      ");
     printf("%s\n","══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════");
     printf("%s\n","                                        Generalized (Near) Cullen / Woodall Siever                                        ");
-    printf("%s\n","                                           Version 1.0 CUDA by A.P. August 2026                                           ");
+    printf("%s\n","                                           Version 1.2.0 CUDA by A.P. Sept 2026                                           ");
 }
 
 #include "console_utf8.hpp"
@@ -3442,10 +3514,18 @@ int main(int argc, char** argv) {
     using namespace gncw_cuda;
     try {
         std::signal(SIGINT, handle_interrupt);
+#if defined(SIGBREAK)
+        std::signal(SIGBREAK, handle_interrupt);
+#endif
         Options opt;
         parse_options(argc, argv, opt);
         if (opt.help) { print_help(); return 0; }
         if (opt.version) { std::cout << APP_VERSION << '\n'; return 0; }
+
+        if (requires_multi_coordinator(opt)) {
+            const bool quiet=opt.quiet;const int result=run_multi_coordinator(std::move(opt));
+            if(!quiet)print_mont_dispatches();return result;
+        }
 
         Problem p; p.opt = std::move(opt);
         normalize_and_validate_problem(p);
@@ -3469,6 +3549,7 @@ int main(int argc, char** argv) {
         uint64_t factors = write_factors(p);
         if (!p.opt.output_factors.empty()) std::cout << "Wrote " << factors << " new factors to " << p.opt.output_factors << ".\n";
         std::cout << "Wrote remaining terms to " << p.opt.output_terms << ".\n";
+        if(!p.opt.quiet)print_mont_dispatches();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << '\n';
