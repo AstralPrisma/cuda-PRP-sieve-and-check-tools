@@ -1,8 +1,14 @@
 # CUDA PRP: sieve and check tools
 
-This repository collects eight CUDA programs for experimental large-integer
+This repository collects ten CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
 are published as GitHub Release assets rather than committed to the repository.
+
+The [v2026.10.29 release](docs/releases/v2026.10.29.md) adds CSPS1.0 and CSSV1.3,
+adds exact single-factor-removal inputs to GFPPS1.1, and updates GPRSV2.3 and
+GHCWSV1.3. Updated CUDA components retain separate Windows/Linux executables
+for sm_86, sm_89, sm_100 and sm_120. GFPS remains the generic variable-index
+checker; no fixed-GFN16 specialization is included.
 
 The [v2026.09.13 release](docs/releases/v2026.09.13.md) updates GFPS to4.5, GHCWPS to1.2 and GNCWSV to1.2.0. It adds general division simplification, safe adaptive PRP radix selection and multi-mode/sparse-workset sieve scheduling. Other components are unchanged. Performance and physical-GPU coverage are documented per workload, not claimed universally.
 
@@ -30,20 +36,23 @@ executables; GFPS's separate experimental optimization is not promoted.
 | --- | ---: | --- |
 | [`GFPS/`](GFPS/) | 4.5 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
 | [`GPRPS/`](GPRPS/) | 2.4 | Checks generalized Proth/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
-| [`GFPPS/`](GFPPS/) | 1.0 | Checks generalized factorial/primorial candidates `k*n!+/-1` and `k*n#+/-1`. |
+| [`GFPPS/`](GFPPS/) | 1.1 | Checks factorial/primorial multiplication and exact single-factor-removal candidates. |
+| [`CSPS/`](CSPS/) | 1.0 | Checks consecutive/alternate Catena Siderum power-product candidates. |
+| [`CSSV/`](CSSV/) | 1.3 | CPU/CUDA sieve for Catena Siderum candidates, with independent signs and checked continuation. |
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
-| [`GPRSV/`](GPRSV/) | 2.2 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
+| [`GPRSV/`](GPRSV/) | 2.3 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` candidate families. |
 | [`GNCWSV/`](GNCWSV/) | 1.2.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
-| [`GHCWSV/`](GHCWSV/) | 1.2 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
+| [`GHCWSV/`](GHCWSV/) | 1.3 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
 | [`GHCWPS/`](GHCWPS/) | 1.2 | Checks the same family with NTT arithmetic and safe checkpoints. |
 
 ## 中文简介
 
-本仓库统一发布八个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
+本仓库统一发布十个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
 检查，GFNSV 用于广义费马数 GPU 筛选，GPRPS 用于广义 Proth/Riesel
 数 PRP 检查，GFPPS 用于广义阶乘/素数阶乘数 PRP 检查，GPRSV 用于固定
 `b,n` 的 `k*b^n±1` 等数型筛选，GNCWSV 用于广义 Cullen/Woodall 与
-Near Cullen/Woodall 数型筛选。源码位于八个同名目录；预编译程序只在
+Near Cullen/Woodall 数型筛选；CSPS/CSSV用于Catena Siderum检验和筛分。
+GFPPS支持乘法和精确移除单个因子的除法形式。源码位于十个同名目录；预编译程序只在
 Releases 中发布。`PRP` 不是确定性素数证明，命中后仍须由独立程序复核。
 
 这里的 GFPS 指本仓库中的 generalized-Fermat CUDA checker；其他项目或
@@ -79,8 +88,12 @@ timings and the limits of validation are in
 
 | Program | Linux x86-64 (Ubuntu 22.04+) | Windows x64 |
 | --- | --- | --- |
+| GFPPS 1.1 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/gfpps-1.1-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/gfpps-1.1-windows-x86_64-cuda13.3.zip) |
+| CSPS 1.0 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/csps-1.0-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/csps-1.0-windows-x86_64-cuda13.3.zip) |
+| CSSV 1.3 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/cssv-1.3-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/cssv-1.3-windows-x86_64-cuda13.3.zip) |
+| GPRSV 2.3 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/gprsv-2.3-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/gprsv-2.3-windows-x86_64-cuda13.3.zip) |
+| GHCWSV 1.3 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/ghcwsv-1.3-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/ghcwsv-1.3-windows-x86_64-cuda13.3.zip) |
 | GPRPS 2.4 | [CUDA 12.8](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.09.12/gprps-2.4-linux-x86_64-cuda12.8.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.09.12/gprps-2.4-windows-x86_64-cuda13.3.zip) |
-| GPRSV 2.2 | [CUDA 12.8](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.09.12/gprsv-2.2-linux-x86_64-cuda12.8.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.09.12/gprsv-2.2-windows-x86_64-cuda13.3.zip) |
 
 Each archive includes `SHA256SUMS` and build metadata. GPRSV's Linux archive
 includes primesieve 12.x and its BSD license.

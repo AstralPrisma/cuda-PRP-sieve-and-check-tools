@@ -1,0 +1,148 @@
+{
+  "ok": true,
+  "platform": "win32",
+  "gpu_cases": [
+    {
+      "expression": "6!/2-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "6!/2-1",
+      "graphs": false,
+      "result": "PRP"
+    },
+    {
+      "expression": "6!/2+1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "6!/2+1",
+      "graphs": false,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "6!/3-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "6!/3+1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "6!/4-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "6!/4+1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "6!/5-1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "6!/5+1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "11#/3-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "11#/3-1",
+      "graphs": false,
+      "result": "PRP"
+    },
+    {
+      "expression": "11#/3+1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "11#/5-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "11#/5+1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "11#/7-1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "11#/7-1",
+      "graphs": false,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "11#/7+1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "3!/2-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "3!/2+1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "3*7!+1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "3*7#-1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "2*20!/3+1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "19#/5-1",
+      "graphs": true,
+      "result": "PRP"
+    },
+    {
+      "expression": "100!/64+1",
+      "graphs": true,
+      "result": "COMPOSITE"
+    },
+    {
+      "expression": "100!/64+1",
+      "graphs": false,
+      "result": "COMPOSITE"
+    }
+  ],
+  "large_prefix_expression": "10000!/7919-1",
+  "large_prefix_bits": 1024,
+  "large_prefix_seconds": 0.122817,
+  "engine_sha256": "a210a3bc1bdc474067cfa8bc0cb5d27baf413f522dc4c78a55975f29f97ea8d7",
+  "checks": [
+    "independent modular exponentiation",
+    "graphs on/off",
+    "quotient checkpoint divisor binding",
+    "corruption rejection",
+    "cross-Graph resume",
+    "legacy checkpoint bidirectional compatibility"
+  ]
+}

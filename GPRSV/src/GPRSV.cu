@@ -61,12 +61,17 @@
 #endif
 
 namespace twinsieve_cuda {
+#ifdef _WIN32
+static bool bulk_prime_copy = true;
+#else
+static bool bulk_prime_copy = false;
+#endif
 constexpr uint64_t KMAX_MAX = (UINT64_C(1) << 62);
 constexpr uint64_t PMAX_MAX = (UINT64_C(1) << 62) - 1;
 constexpr uint32_t BMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint32_t NMAX_MAX = (UINT32_C(1) << 31);
 constexpr uint64_t SIGN_BIT = UINT64_C(1) << 63;
-constexpr const char* APP_VERSION = "2.2";
+constexpr const char* APP_VERSION = "2.3";
 enum class TermType : int { Unknown = 0, BN = 1, Primorial = 2, Factorial = 3 };
 enum class FileFormat : int { Unknown = 0, ABCD, ABC, NewPGen };
 enum class PrimeMode : int { Auto = 0, PrimeSieve, Segmented, MillerRabin };
@@ -389,6 +394,10 @@ static void parse_options(int argc, char** argv, Options& o) {
             else if (v == "segmented") o.prime_mode = PrimeMode::Segmented;
             else if (v == "mr") o.prime_mode = PrimeMode::MillerRabin;
             else fail("prime-generator must be auto, primesieve, segmented, or mr");
+        } else if (is_long("--prime-copy")) {
+            const auto value = option_value(i, argc, argv, a);
+            if (value != "bulk" && value != "scalar") fail("prime-copy must be bulk or scalar");
+            bulk_prime_copy = value == "bulk";
         } else if (is_long("--prime-prefetch")) {
             o.prime_prefetch = static_cast<uint32_t>(parse_u64(option_value(i, argc, argv, a), 1, 64, "prime-prefetch"));
         } else if (is_long("--prime-region-batches")) {
@@ -489,6 +498,7 @@ static void print_help() {
         << "  -w, --batch-primes N       primes copied per launch (default 1048576)\n"
         << "      --cpu-small-prime P    CPU handles p <= P (default 100000)\n"
         << "      --prime-generator M    auto, primesieve, segmented, or mr\n"
+        << "      --prime-copy M         bulk or scalar (Windows default bulk, Linux default scalar)\n"
         << "      --prime-prefetch N     queued pinned batch views (default 32)\n"
         << "      --prime-threads N      libprimesieve iterators / built-in workers; 0=auto\n"
         << "      --prime-region-batches N  batches per libprimesieve initialization (default 12)\n"
@@ -766,6 +776,17 @@ public:
         if (it->is_error || !it->primes || it->i >= it->size)
             fail("libprimesieve iterator failed while generating primes");
         return it->primes[it->i];
+    }
+
+    std::pair<const uint64_t*, size_t> next_span(PrimeSieveIteratorAbi* it) const {
+        ++it->i;
+        if (it->i >= it->size) generate_(it);
+        if (it->is_error || !it->primes || it->i >= it->size)
+            fail("libprimesieve span generation failed");
+        const auto* begin = it->primes + it->i;
+        const size_t count = it->size - it->i;
+        it->i = it->size - 1;
+        return {begin, count};
     }
 
 private:
@@ -1290,6 +1311,24 @@ private:
                 // The main thread later submits spans of this same allocation
                 // to cudaMemcpyAsync, eliminating vector->pinned staging.
                 ps_->jump_iterator(&it, region.low - 1, region.high);
+                if (bulk_prime_copy) {
+                    for (;;) {
+                        const auto span = ps_->next_span(&it);
+                        const auto* end = span.first + span.second;
+                        if (end[-1] == std::numeric_limits<uint64_t>::max())
+                            fail("libprimesieve returned PRIMESIEVE_ERROR");
+                        const auto* first = std::lower_bound(span.first, end, region.low);
+                        const auto* stop = std::upper_bound(first, end, region.high);
+                        const size_t count = static_cast<size_t>(stop-first);
+                        if (count > std::numeric_limits<size_t>::max()-result->count)
+                            fail("prime span overflow");
+                        if (result->count+count > result->capacity)
+                            ps_pinned_pool_->grow(*result, result->count+count);
+                        if (count) std::memcpy(result->ptr+result->count, first, count*sizeof(uint64_t));
+                        result->count += count;
+                        if (stop != end) break;
+                    }
+                } else {
                 for (;;) {
                     uint64_t q = ps_->next_prime(&it);
                     if (q == std::numeric_limits<uint64_t>::max())
@@ -1299,6 +1338,7 @@ private:
                     if (result->count == result->capacity)
                         ps_pinned_pool_->grow(*result, result->count + 1);
                     result->ptr[result->count++] = q;
+                }
                 }
 
                 {
@@ -3146,7 +3186,7 @@ void display_banner() {
     printf("%s\n","      `Y8bood8P'   Y8P o888o       Y8P o888o  o888o Y8P 8''88888P'  Y8P      `8'     Y8P     ");
     printf("%s\n","\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220\342\225\220");
     printf("%s\n","                               Generalized-Proth/Riesel-Siever                               ");
-    printf("%s\n","                              Version 2.2 CUDA by A.P. Sep 2026                              ");
+    printf("%s\n","                              Version 2.3 CUDA by A.P. Sep 2026                              ");
 }
 
 #include "console_utf8.hpp"

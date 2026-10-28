@@ -1,9 +1,13 @@
-# GHCWSV 1.2
+# GHCWSV 1.3
 
 Generalized Hyper-Cullen / Woodall Siever, by A.P., Sept 2026.
 
 固定 b，扫描 n，筛选
 `b^n*n^b+1`、`b^n*n^b-1`，或使用 `--sign both` 同时筛选两者。一个文件固定一个 b，包含单个符号或两种符号的剩余候选。
+
+## 1.3：生成与消费流水线
+
+更新共享质数生成流水线与批次传递，保留独立生成区域、完整消费顺序和已完成边界。Linux 发布包附带 `bin/lib/libprimesieve.so.12`，Windows 附带程序同目录的 `primesieve.dll`；不需要固定的维护者路径。原有筛选数学、双符号掩码及检查点格式不变。收益取决于候选规模与 CPU/GPU 平衡，不保证每个参数都加速。
 
 ## 1.2：动态工作集调度
 

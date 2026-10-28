@@ -56,7 +56,7 @@ Upstream project: <https://github.com/NVIDIA/cccl>
 
 ## NVIDIA CUDA Toolkit and runtime
 
-All eight tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
+All ten tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
 and GPU to execute. The CUDA toolkit, headers, compiler, driver, and any
 redistributable runtime components remain subject to NVIDIA's licenses and EULA.
 They are not relicensed by this repository's GPL license.
@@ -81,6 +81,15 @@ algorithm; a cryptographic standard is not itself a substitute for a primality
 certificate.
 
 ## License relationship
+
+Official Linux GFPPS1.1 builds statically link GNU GMP6.3.0 for host-only
+candidate construction and Montgomery parameters. GMP is third-party CPU
+arithmetic software, not a separate checker or CUDA engine. GMP is available
+under GPL-2.0-or-later or LGPL-3.0-or-later; see the unmodified upstream source
+and copyright/license files included with the Linux archive. Corresponding
+source: `LICENSES/gmp-6.3.0.tar.xz`, SHA-256
+`a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898`.
+Upstream: <https://gmplib.org/>, <https://ftp.gnu.org/gnu/gmp/>.
 
 The repository as a whole is distributed under `GPL-2.0-or-later`. Third-party
 copyright notices and license obligations remain in effect. When upstream

@@ -28,6 +28,8 @@ try {
     Invoke-Checked (Join-Path $binPath "GPRPS_$Architecture.exe") @("--selftest")
     Invoke-Gfpps @("--check", "1*3!+1", "--verify-cpp-int") "PRP"
     Invoke-Gfpps @("--check", "3*5!+1", "--no-graphs", "--verify-cpp-int") "COMPOSITE"
+    Invoke-Gfpps @("--check", "6!/2-1", "--verify-cpp-int") "PRP"
+    Invoke-Gfpps @("--check", "11#/3+1", "--verify-cpp-int") "COMPOSITE"
     $gfppsCheckpoint = Join-Path $scratch "gfpps.ckpt"
     Invoke-Gfpps @("--check", "17*31#+1", "--max-bits", "16",
         "--checkpoint", $gfppsCheckpoint, "--verify-cpp-int") "PARTIAL"
@@ -62,6 +64,14 @@ try {
         "--amin", "2", "--amax", "40", "--base", "3", "--mode", "1",
         "--pmin", "2", "--pmax", "1000", "--prime-generator", "segmented",
         "--outputterms", (Join-Path $scratch "gncwsv.txt"), "--verify", "--quiet"
+    )
+    Invoke-Checked (Join-Path $binPath "GHCWSV_$Architecture.exe") @("--selftest")
+    Invoke-Checked (Join-Path $binPath "CSPS_$Architecture.exe") @(
+        "--start", "6", "--terms", "4", "--step", "1", "--sign", "+", "--verify-cpp-int"
+    )
+    Invoke-Checked (Join-Path $binPath "CSSV_$Architecture.exe") @(
+        "--start", "1", "--end", "32", "--terms", "4", "--step", "1", "--sign", "both",
+        "--pmax", "10000", "--backend", "gpu", "--out", (Join-Path $scratch "cssv.txt")
     )
     Write-Output "smoke tests passed for $Architecture"
 }

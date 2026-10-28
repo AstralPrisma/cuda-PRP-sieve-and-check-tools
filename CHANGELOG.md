@@ -1,3 +1,11 @@
+# 2026.10.29
+
+- Add CSPS 1.0 and CSSV 1.3 for consecutive/alternate Catena Siderum power products. CSSV supports independent signs, scientific sieve bounds, periodic checked recovery and offline task conversion.
+- GFPPS 1.1 accepts exact single-factor removal `n!/d±1` and `n#/q±1`, retaining legacy multiplication and GFPPS001 checkpoints. Quotient checkpoints use GFPPS002 and bind the divisor. Linux host construction optionally uses statically linked GNU GMP; Windows has native CUDA binaries with Boost host construction.
+- Promote validated GPRSV 2.3 and GHCWSV 1.3 prime-generation/scheduling updates, with bundled primesieve 12.x runtime libraries. No universal speedup claim is made.
+- Provide four native SM targets on both Windows and Linux for these five updated tools; distinguish CPU startup/build coverage from physical GPU testing in the manifest.
+- Generic GFPS 4.5 is unchanged. Private fixed-GFN16 and recursive-Fermat tools are not part of this release.
+
 # 2026.09.13
 
 - GFPS4.5: remove the provably zero highest quotient digit in large-base reciprocal division; retain general input support and exact correction.

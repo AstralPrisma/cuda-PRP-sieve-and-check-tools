@@ -7,6 +7,10 @@
 #endif
 #include "ntt_backend.cuh"
 #include "sha256.hpp"
+#include "factorial_expression.hpp"
+#ifdef GFPPS_USE_GMP
+#include "host_gmp.hpp"
+#endif
 #include <cub/cub.cuh>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <atomic>
@@ -44,7 +48,7 @@
 namespace gfpps {
 using boost::multiprecision::cpp_int;
 using gfpps_ntt::cuda_check;
-constexpr char kVersion[]="1.0";
+constexpr char kVersion[]="1.1";
 constexpr uint32_t BITS=15, BASE=1u<<BITS, MASK=BASE-1;
 constexpr uint32_t P0=998244353, P1=1004535809;
 constexpr uint32_t MAX_LIMBS=1u<<20;
@@ -160,6 +164,9 @@ cpp_int from_limbs(const std::vector<uint32_t>& v) {
     cpp_int x; import_bits(x,v.begin(),v.end(),BITS,false); return x;
 }
 cpp_int inverse_power2(const cpp_int& n,unsigned bits) {
+#ifdef GFPPS_USE_GMP
+    return gfpps_host::inverse_power2(n,bits);
+#else
     cpp_int inv=1;
     for(unsigned have=1;have<bits;) {
         if(stop_requested.load(std::memory_order_relaxed)) throw std::runtime_error("interrupted during Montgomery setup");
@@ -170,6 +177,7 @@ cpp_int inverse_power2(const cpp_int& n,unsigned bits) {
         have=next;
     }
     return inv;
+#endif
 }
 
 class Montgomery {
@@ -281,7 +289,11 @@ public:
             spectrum(mod_.p,nf0_.p,nf1_.p);
             cpp_int inverse=inverse_power2(n_,BITS*m_);
             cpp_int nprime=(radix_power_-inverse)&(radix_power_-1);
+#ifdef GFPPS_USE_GMP
+            if(!gfpps_host::check_inverse(n_,nprime,BITS*m_)) throw std::runtime_error("Montgomery inverse check failed");
+#else
             if(((n_*nprime+1)&(radix_power_-1))!=0) throw std::runtime_error("Montgomery inverse check failed");
+#endif
             auto ni=limbs(nprime,m_);
             cuda_check(cudaMemcpyAsync(q_.p,ni.data(),ni.size()*4,cudaMemcpyHostToDevice,stream_),"upload inverse");
             spectrum(q_.p,if0_.p,if1_.p);
@@ -341,43 +353,14 @@ uint64_t number(const std::string& s) {
         throw std::runtime_error("invalid numeric literal: "+s);
     size_t end=0; uint64_t v=std::stoull(s,&end,base); if(end!=s.size()) throw std::runtime_error("invalid numeric tail"); return v;
 }
-struct Expression { uint64_t k,n; char family; int c;
-    std::string text() const { return std::to_string(k)+"*"+std::to_string(n)+family+(c==1?"+1":"-1"); }
-};
-Expression parse(const std::string& text) {
-    static const std::regex pattern(R"(^\s*(?:(0[xX][0-9a-fA-F]+|[0-9]+)\s*\*\s*)?(0[xX][0-9a-fA-F]+|[0-9]+)\s*([!#])\s*([+-])\s*1\s*$)");
-    std::smatch m; if(!std::regex_match(text,m,pattern)) throw std::runtime_error("expected k*n!+/-1 or k*n#+/-1");
-    Expression e{m[1].matched?number(m[1]):1,number(m[2]),m[3].str()[0],m[4]=="+"?1:-1};
-    if(e.k==0 || e.n>10000000) throw std::runtime_error("requires k>=1 and 0<=n<=10000000");
-    return e;
-}
-cpp_int product_tree(const std::vector<uint32_t>& values,size_t lo,size_t hi) {
-    if(stop_requested.load()) throw std::runtime_error("interrupted during modulus construction");
-    if(hi-lo<32) { cpp_int p=1; for(size_t i=lo;i<hi;++i) p*=values[i]; return p; }
-    size_t mid=lo+(hi-lo)/2;
-    return product_tree(values,lo,mid)*product_tree(values,mid,hi);
-}
+using Expression=gfpps_model::Expression;
+Expression parse(const std::string& text) { return gfpps_model::parse(text); }
 cpp_int modulus(const Expression& e) {
-    if(e.family=='!' && e.n>2) {
-        long double estimate=std::lgamma((long double)e.n+1)/std::log(2.L);
-        if(estimate>static_cast<long double>(MAX_LIMBS)*BITS+1024) throw std::runtime_error("factorial exceeds supported size limit");
-    }
-    std::vector<uint32_t> factors;
-    if(e.family=='!') { factors.reserve(size_t(e.n)); for(uint32_t i=2;i<=e.n;++i) factors.push_back(i); }
-    else {
-        std::vector<bool> composite(size_t(e.n)+1,false);
-        for(uint32_t i=2;i<=e.n;++i) {
-            if(stop_requested.load()) throw std::runtime_error("interrupted during prime generation");
-            if(!composite[i]) {
-                factors.push_back(i);
-                if(uint64_t(i)*i<=e.n) for(uint64_t j=uint64_t(i)*i;j<=e.n;j+=i) composite[size_t(j)]=true;
-            }
-        }
-    }
-    cpp_int n=product_tree(factors,0,factors.size())*e.k+e.c;
-    if(n<2) throw std::runtime_error("candidate must be at least 2");
-    if(boost::multiprecision::msb(n)+9>MAX_LIMBS*BITS) throw std::runtime_error("candidate exceeds supported bit limit");
-    return n;
+#ifdef GFPPS_USE_GMP
+    return gfpps_host::construct(e,uint64_t(MAX_LIMBS)*BITS,[]{return stop_requested.load(std::memory_order_relaxed);});
+#else
+    return gfpps_model::construct(e,uint64_t(MAX_LIMBS)*BITS,[]{return stop_requested.load(std::memory_order_relaxed);});
+#endif
 }
 
 std::array<uint8_t,32> digest(const std::vector<uint8_t>& data) {
@@ -389,8 +372,11 @@ std::array<uint8_t,32> modulus_hash(const cpp_int& n) {
 void append64(std::vector<uint8_t>& out,uint64_t x) { for(int j=0;j<8;++j) out.push_back(uint8_t(x>>(j*8))); }
 std::vector<uint8_t> checkpoint_data(const Expression& e,uint32_t witness,const cpp_int& n,
                                     uint64_t bits,uint64_t done,const std::vector<uint32_t>& v) {
-    std::vector<uint8_t> out={'G','F','P','P','S','0','0','1'};
-    for(uint64_t x:{uint64_t(1),uint64_t(e.family=='!'?1:2),e.k,e.n,uint64_t(e.c+1),uint64_t(witness),uint64_t(v.size()),
+    const bool quotient=e.divisor!=1;
+    std::vector<uint8_t> out={'G','F','P','P','S','0','0',uint8_t(quotient?'2':'1')};
+    for(uint64_t x:{uint64_t(quotient?2:1),uint64_t(e.family=='!'?1:2),e.k,e.n}) append64(out,x);
+    if(quotient)append64(out,e.divisor);
+    for(uint64_t x:{uint64_t(e.c+1),uint64_t(witness),uint64_t(v.size()),
                     uint64_t(boost::multiprecision::msb(n)+1),bits,done}) append64(out,x);
     auto nh=modulus_hash(n); out.insert(out.end(),nh.begin(),nh.end());
     for(uint32_t x:v) for(int j=0;j<4;++j) out.push_back(uint8_t(x>>(j*8)));
@@ -429,15 +415,19 @@ void atomic_write(const std::filesystem::path& path,const std::vector<uint8_t>& 
 std::pair<uint64_t,std::vector<uint32_t>> read_checkpoint(const std::filesystem::path& path,
         const Expression& e,uint32_t witness,const cpp_int& n,uint64_t bits,int m,const cpp_int& r) {
     uint64_t size=std::filesystem::file_size(path);
-    if(size!=152+uint64_t(m)*4 || m<1 || m>int(MAX_LIMBS)) throw std::runtime_error("checkpoint length/limb mismatch");
+    const bool quotient=e.divisor!=1;
+    if(size!=(quotient?160:152)+uint64_t(m)*4 || m<1 || m>int(MAX_LIMBS)) throw std::runtime_error("checkpoint length/limb mismatch");
     std::ifstream input(path,std::ios::binary); std::vector<uint8_t> bytes(static_cast<size_t>(size));
     if(!input.read(reinterpret_cast<char*>(bytes.data()),bytes.size())) throw std::runtime_error("checkpoint read failed");
     std::array<uint8_t,32> saved{}; std::copy(bytes.end()-32,bytes.end(),saved.begin()); bytes.resize(bytes.size()-32);
     if(digest(bytes)!=saved) throw std::runtime_error("checkpoint SHA-256 mismatch");
-    if(std::memcmp(bytes.data(),"GFPPS001",8)!=0) throw std::runtime_error("not a GFPPS checkpoint");
+    if(std::memcmp(bytes.data(),quotient?"GFPPS002":"GFPPS001",8)!=0) throw std::runtime_error("wrong GFPPS checkpoint family/version");
     size_t pos=8;
     auto take64=[&](){ uint64_t x=0; for(int j=0;j<8;++j) x|=uint64_t(bytes[pos++])<<(8*j); return x; };
-    for(uint64_t want:{uint64_t(1),uint64_t(e.family=='!'?1:2),e.k,e.n,uint64_t(e.c+1),uint64_t(witness),uint64_t(m),
+    for(uint64_t want:{uint64_t(quotient?2:1),uint64_t(e.family=='!'?1:2),e.k,e.n})
+        if(take64()!=want) throw std::runtime_error("checkpoint parameters do not match");
+    if(quotient&&take64()!=e.divisor)throw std::runtime_error("checkpoint divisor does not match");
+    for(uint64_t want:{uint64_t(e.c+1),uint64_t(witness),uint64_t(m),
                        uint64_t(boost::multiprecision::msb(n)+1),bits})
         if(take64()!=want) throw std::runtime_error("checkpoint parameters do not match");
     uint64_t done=take64(); if(done>bits) throw std::runtime_error("checkpoint progress out of range");
@@ -459,12 +449,15 @@ void display_banner() {
     printf("%s\n","      `Y8bood8P'   Y8P o888o        Y8P o888o        Y8P o888o        Y8P 8''88888P'  Y8P      ");
     printf("%s\n","\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90");
     printf("%s\n","                        Generalized-Factorial / Primorial-Primes-Seeker                        ");
-    printf("%s\n","                               Version 1.0 CUDA by A.P. Sep 2026                               ");
+    printf("%s\n","                              Version 1.1 CUDA by A.P. Oct 2026                              ");
 }
 
 int run(int argc,char** argv) {
-    std::string expression,checkpoint; uint32_t witness=2; uint64_t max_bits=0,every=100000,progress=100000;
-    bool resume=false,verify=false,graphs=true,print_residue=false,help=false,interval_given=false;
+    if(argc==2&&std::string(argv[1])=="--capabilities"){
+        std::cout<<"{\"program\":\"GFPPS\",\"version\":\"1.1\",\"features\":[\"gfpps-division-v1\"],\"checkpoints\":[\"GFPPS001\",\"GFPPS002\"]}\n";return 0;
+    }
+    std::string expression,checkpoint,stop_file; uint32_t witness=2; uint64_t max_bits=0,every=100000,progress=100000;
+    bool resume=false,verify=false,graphs=true,print_residue=false,help=false,interval_given=false,inspect=false,print_value=false;
     // Validated parallel NTT profile; the CLI can still override this limit.
     int blocks=256;
     for(int i=1;i<argc;++i) {
@@ -474,12 +467,15 @@ int run(int argc,char** argv) {
         else if(arg=="--witness") { uint64_t v=number(next()); if(v<2||v>255) throw std::runtime_error("witness must be 2..255"); witness=uint32_t(v); }
         else if(arg=="--max-bits") max_bits=number(next());
         else if(arg=="--checkpoint") checkpoint=next();
+        else if(arg=="--stop-file") stop_file=next();
         else if(arg=="--checkpoint-every-bits") { every=number(next()); interval_given=true; }
         else if(arg=="--progress-every-bits") { progress=number(next()); if(!progress) throw std::runtime_error("progress interval must be positive"); }
         else if(arg=="--resume-checkpoint") resume=true;
         else if(arg=="--verify-cpp-int") verify=true;
         else if(arg=="--no-graphs") graphs=false;
         else if(arg=="--print-residue") print_residue=true;
+        else if(arg=="--construct-only") inspect=true;
+        else if(arg=="--print-value") print_value=true;
         else if(arg=="--force-ntt-blocks") { uint64_t v=number(next()); if(v<1||v>4096) throw std::runtime_error("blocks must be 1..4096"); blocks=int(v); }
         else if(arg=="-h" || arg=="--help") help=true;
         else throw std::runtime_error("unknown option: "+arg);
@@ -488,8 +484,13 @@ int run(int argc,char** argv) {
         display_banner();
         std::cout<<"  GFPPS --check \"k*n!+/-1\" [options]\n  GFPPS --check \"k*n#+/-1\" [options]\n"
                  <<"n# = product of all primes <= n; 0! = 0# = 1. Quote the expression.\n"
+                 <<"Single-factor removal: --check 'n!/d+/-1' or 'n#/q+/-1' (optional k*).\n"
+                 <<"Factorial: 2<=d<n; primorial: prime q below its largest prime factor.\n"
+                 <<"The sieve excludes q=2; explicit n#/2 checks detect even candidates.\n"
+                 <<" --construct-only [--print-value] constructs exactly without using the GPU.\n"
                  <<"Options: --witness 2..255 (default2), --max-bits N (0=full),\n"
                  <<" --checkpoint FILE --checkpoint-every-bits N --resume-checkpoint,\n"
+                 <<" --stop-file FILE requests a safe checkpoint and interruption.\n"
                  <<" --progress-every-bits N (default100000) --force-ntt-blocks N --no-graphs,\n"
                  <<" --verify-cpp-int (explicit, <=8192-bit N), --print-residue.\n"
                  <<"Fermat PRP only, not a primality proof. Independently verify important results.\n";
@@ -509,6 +510,8 @@ int run(int argc,char** argv) {
     const uint64_t decimal_estimate=static_cast<uint64_t>(std::floor(std::log10(top)+log_shift*std::log10(2.0)))+1;
     std::cout<<"modulus: bits="<<nbits<<", digits_estimate="<<decimal_estimate
              <<", construction_seconds="<<std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()<<"\n";
+    if(inspect){if(print_value){if(nbits>8192)throw std::runtime_error("print-value capped at 8192 bits");std::cout<<"value="<<n<<"\n";}return 0;}
+    if(print_value)throw std::runtime_error("print-value requires --construct-only");
     if(verify && nbits>8192) throw std::runtime_error("explicit cpp_int verification capped at 8192 bits");
     if(n==2) { std::cout<<"gfpps-check: N="<<e.text()<<", result=PRP, reason=trivial-prime-2\n"; return 0; }
     if((n&1)==0) { std::cout<<"gfpps-check: N="<<e.text()<<", result=COMPOSITE, factor=2\n"; return 0; }
@@ -546,6 +549,7 @@ int run(int argc,char** argv) {
     uint64_t last_saved=done,last_progress=done;
     auto exp_started=std::chrono::steady_clock::now();
     while(done<limit && !stop_requested.load(std::memory_order_relaxed)) {
+        if(!stop_file.empty()&&(done-start_done)%128==0&&std::filesystem::exists(std::filesystem::u8path(stop_file))){stop_requested.store(true,std::memory_order_relaxed);break;}
         gpu.step(boost::multiprecision::bit_test(exponent,static_cast<unsigned>(bits-1-done)));
         ++done;
         const bool report_due=done-last_progress>=progress;

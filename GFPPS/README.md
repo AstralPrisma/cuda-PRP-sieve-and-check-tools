@@ -1,4 +1,7 @@
-# GFPPS 1.0
+# GFPPS 1.1
+
+Version1.1 also supports exact `n!/d+/-1` and `n#/q+/-1`, with independently
+bound divisor checkpoints. See [quotient inputs and host-library packaging](QUOTIENTS.md).
 
 **Generalized Factorial / Primorial Prime Seeker** performs a Fermat
 probable-prime check of one explicit `k*n!+1`, `k*n!-1`, `k*n#+1`, or `k*n#-1`.

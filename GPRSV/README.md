@@ -12,7 +12,7 @@ k*n!  - 1        k*n!  + 1
 the `-1` and `+1` terms for a given `k` are treated as one pair. Use
 `--independent` when the two signs must be retained and sieved separately.
 
-The current source version is 2.2. The implementation is a single-translation-
+The current source version is 2.3. The implementation is a single-translation-
 unit CUDA port/reimplementation of the `twinsieve` application from mtsieve.
 
 > 中文：GPRSV 用 GPU 筛选 `k*b^n±1`、`k*n#±1` 和 `k*n!±1`。默认按双子候选处理；加 `-s` 可分别筛选正负两侧。
@@ -28,7 +28,13 @@ GPRSV dynamically loads primesieve at runtime; primesieve headers and link flags
 are not required to build GPRSV. With `--prime-generator auto`, GPRSV uses
 primesieve when it is available and falls back to its built-in segmented/Miller-
 Rabin generator otherwise. `--prime-generator primesieve` makes absence of the
-library an error.
+library an error. Version 2.3 uses bounded producer regions, direct pinned
+prime-buffer transfer and independent CUDA submission slots while preserving
+all unprocessed tails and exact resume boundaries. Benefits depend on the
+host/GPU balance; a faster GPU cannot remove a CPU prime-generation bottleneck.
+
+Release archives include a verified primesieve 12.x runtime: `bin/lib` on Linux,
+beside the executable on Windows. Keep its BSD copyright notice with the library.
 
 On Debian/Ubuntu/WSL, the optional library can normally be installed with:
 

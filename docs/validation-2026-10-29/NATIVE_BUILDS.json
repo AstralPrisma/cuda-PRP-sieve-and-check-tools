@@ -1,0 +1,365 @@
+{
+  "records": [
+    {
+      "platform": "windows",
+      "tool": "GFPPS",
+      "target": "sm_86",
+      "sha256": "3eebbbbace5f401168122346d7373a44eb8f6b6494db2ec39b113fec96bbdd68",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GFPPS",
+      "target": "sm_89",
+      "sha256": "a210a3bc1bdc474067cfa8bc0cb5d27baf413f522dc4c78a55975f29f97ea8d7",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GFPPS",
+      "target": "sm_100",
+      "sha256": "625e56e53bae526c0374df81d4f8577eaeb7bc6e53f7c70bf21997b28c3d8fd4",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GFPPS",
+      "target": "sm_120",
+      "sha256": "d421e9b8b9aa61a7f9d0b7254f74e6655228312765ee5e3244a242499f378763",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GPRSV",
+      "target": "sm_86",
+      "sha256": "122fe2df5d58f578f994a23a67a6fdb8a5c5998c0232508dde6ea6bc3428b466",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GPRSV",
+      "target": "sm_89",
+      "sha256": "e2773338a60602db83af5ba7644ffe4a7e9f231c09790fbf6c7cb742ff154a60",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GPRSV",
+      "target": "sm_100",
+      "sha256": "22bcfad307efb781333ccc4e946b01ae1ee0e155959eb0315f25d30cffc2d084",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GPRSV",
+      "target": "sm_120",
+      "sha256": "24ae6dc1f6b1e906455ef6f4549dbe3b7a0a064680e48e82533d2373144851be",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GHCWSV",
+      "target": "sm_86",
+      "sha256": "0d89f9a1b7c401e3f48b109d397a58e46ad8b97bd40c7586dbee7caf4116553c",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GHCWSV",
+      "target": "sm_89",
+      "sha256": "4ef97acc59e55ce06c198f14e97e81a44729ccf6359d55fe5c47f16c8500ff7e",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GHCWSV",
+      "target": "sm_100",
+      "sha256": "0e69738c8bf36bf476d99dd4f89465f24dfbeb966070db6b8f55f7b317122aef",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "GHCWSV",
+      "target": "sm_120",
+      "sha256": "94754ed46135ad492cae744071929aa8a78c10aca4089a4c00a8f0d5d911d8b6",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSPS",
+      "target": "sm_86",
+      "sha256": "03aa1f4ef1bd35d7cabb87a60183dd279251961c5de494f87f79c78b6b81d365",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSPS",
+      "target": "sm_89",
+      "sha256": "c49024ff5f1206fd8af9ca539265c3c75425c74e9860fedd573a2417bf8c1ea0",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSPS",
+      "target": "sm_100",
+      "sha256": "3eb74eb459a2434f2e05778fa136366de680d947fb727ff33339f3d7a44da809",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSPS",
+      "target": "sm_120",
+      "sha256": "af976eab89f155dd065f9c8c07c35e183b400fb84caca58841f17c7eced89c12",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSSV",
+      "target": "sm_86",
+      "sha256": "db320c7b947f184285d97cb9496c181476e1c01d249da1386e66ce6a5c1e7dc3",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSSV",
+      "target": "sm_89",
+      "sha256": "cb8765ef3272f2c2e9764022e092ae717d86367ea5e9eef26c6fdf500a81e4f1",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSSV",
+      "target": "sm_100",
+      "sha256": "440f34096ba7595d8b94d4d04c7cb70dd7f98778acdfe16761e4bc3fedd78bd0",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "windows",
+      "tool": "CSSV",
+      "target": "sm_120",
+      "sha256": "c282e0f1427f20364e481a5ba5d738c800eaeacac307d36539f1be88b8ddb1d4",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GFPPS",
+      "target": "sm_86",
+      "sha256": "0f6373c63e63e98d8905f4cd18574da4011e0a2f32c72c755d85b873b7fdb087",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GFPPS",
+      "target": "sm_89",
+      "sha256": "eadbe8c99fa5def38f740c65ee314aa76ad736ff856df9d909ede6d7a0d20266",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GFPPS",
+      "target": "sm_100",
+      "sha256": "609581451ce59bad7b727edaae0fe1a3584f4b2e04888d6382dea5894e77ab65",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GFPPS",
+      "target": "sm_120",
+      "sha256": "a7d3fc022c6891efceea197b1ea09a144113bf31b008d2723be70b65a5e4c88e",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GPRSV",
+      "target": "sm_86",
+      "sha256": "8514d51dd9a7e79ae592c874adb408c922abc51ce98f0f8d7eb432a3bfbb235d",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GPRSV",
+      "target": "sm_89",
+      "sha256": "518463b6b72bbe78a6ea43c75ec379c5088393e058d9846adceb5f282a55ea8c",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GPRSV",
+      "target": "sm_100",
+      "sha256": "1aced35b5077514d4050d0e689810676ca0e45e4085ff37c64536ed49d71e828",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GPRSV",
+      "target": "sm_120",
+      "sha256": "ce35fcad6af586acb03707d5621dfdef0c83ba0dd088dbf2b65df13d477f5cd9",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GHCWSV",
+      "target": "sm_86",
+      "sha256": "9358c27e7ac802dd0e054cbde5714ac7ca8159fa23e77052a742fb06828374f8",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GHCWSV",
+      "target": "sm_89",
+      "sha256": "3b86592fd5665405d7ddf173149c17ebc510cc00493ed55e62d7f38b0d2d3bbf",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GHCWSV",
+      "target": "sm_100",
+      "sha256": "287b50ab35885d8c71d39ac1e72ac616d98eacf28b5b7b263387665846b28baf",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "GHCWSV",
+      "target": "sm_120",
+      "sha256": "eef1c8639b4a4344efc749d83413f5315580e96b833ba350e79987147ea4011a",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSPS",
+      "target": "sm_86",
+      "sha256": "84302028904047e4986d6d4302fc89fdb01e34914a4a1907643541c7a9827d94",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSPS",
+      "target": "sm_89",
+      "sha256": "3bcd4f9b0ba519229f505af23beb1eda294c71f2367e17b5ddb8e1e9b339c9bb",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSPS",
+      "target": "sm_100",
+      "sha256": "50df6d8db710a6aae766903aa48e96b4669f22d47e48a481cb3f13fd43aa653a",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSPS",
+      "target": "sm_120",
+      "sha256": "9a76363b8d4bae398a7df10a53c99f86af18af87ccfe7547887af087a660618a",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSSV",
+      "target": "sm_86",
+      "sha256": "874e684e59a4ebf631a8017b6f53a55f45c7908ec5e7f7a8dcbbabead13580a9",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSSV",
+      "target": "sm_89",
+      "sha256": "bf7f4eb9a59f39480ac11cc70fa3d6467afbb1816c245a1cb41b697cc71c6439",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSSV",
+      "target": "sm_100",
+      "sha256": "7c7ab3822aad3eb1a0de4230b9049082a5ce22fbbf597fc9d18eb16434a5ede5",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    },
+    {
+      "platform": "linux",
+      "tool": "CSSV",
+      "target": "sm_120",
+      "sha256": "fcb1206cd8bc2d93b63e575d2e8f78eecf08926adb66456cf3395fb4b6ce2052",
+      "native_architecture_verified": true,
+      "gpu_tested": false,
+      "ubuntu_22_04_cpu_help_passed": true
+    }
+  ],
+  "no_physical_gpu_claim_from_this_test": true
+}

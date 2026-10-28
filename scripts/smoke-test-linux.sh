@@ -15,6 +15,10 @@ trap 'rm -rf -- "${scratch}"' EXIT
 grep -q 'verification=cpp_int-match, result=PRP' "${scratch}/gfpps-prime.log"
 "${bin_dir}/GFPPS_${arch}" --check '3*5!+1' --no-graphs --verify-cpp-int | tee "${scratch}/gfpps-composite.log"
 grep -q 'verification=cpp_int-match, result=COMPOSITE' "${scratch}/gfpps-composite.log"
+"${bin_dir}/GFPPS_${arch}" --check '6!/2-1' --verify-cpp-int | tee "${scratch}/gfpps-division.log"
+grep -q 'verification=cpp_int-match, result=PRP' "${scratch}/gfpps-division.log"
+"${bin_dir}/GFPPS_${arch}" --check '11#/3+1' --verify-cpp-int | tee "${scratch}/gfpps-division-composite.log"
+grep -q 'verification=cpp_int-match, result=COMPOSITE' "${scratch}/gfpps-division-composite.log"
 "${bin_dir}/GFPPS_${arch}" --check '17*31#+1' --max-bits 16 \
   --checkpoint "${scratch}/gfpps.ckpt" --verify-cpp-int | tee "${scratch}/gfpps-partial.log"
 grep -q 'verification=cpp_int-match, result=PARTIAL' "${scratch}/gfpps-partial.log"
@@ -46,4 +50,8 @@ test -f "${scratch}/gprsv.txt"
   --pmin 2 --pmax 1000 --outputterms "${scratch}/gncwsv.txt" --verify --quiet
 test -s "${scratch}/gncwsv.txt"
 
+"${bin_dir}/GHCWSV_${arch}" --selftest
+"${bin_dir}/CSPS_${arch}" --start 6 --terms 4 --step 1 --sign + --verify-cpp-int
+"${bin_dir}/CSSV_${arch}" --start 1 --end 32 --terms 4 --step 1 --sign both \
+  --pmax 10000 --backend gpu --out "${scratch}/cssv.txt"
 printf 'smoke tests passed for %s\n' "${arch}"

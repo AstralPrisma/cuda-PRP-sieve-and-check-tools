@@ -26,6 +26,11 @@ if [[ -n "${BOOST_ROOT:-}" ]]; then
   boost_relative="$(realpath --relative-to="${src_dir}" "${BOOST_ROOT}")"
   include_args=("-I${boost_relative}")
 fi
+gmp_args=()
+if [[ -n "${GMP_ROOT:-}" ]]; then
+  [[ -f "${GMP_ROOT}/include/gmp.h" && -f "${GMP_ROOT}/lib/libgmp.a" ]] || { printf 'GMP_ROOT must contain include/gmp.h and lib/libgmp.a\n' >&2; exit 1; }
+  gmp_args=(-DGFPPS_USE_GMP "-I${GMP_ROOT}/include" "${GMP_ROOT}/lib/libgmp.a")
+fi
 mkdir -p -- "${out_dir}"
 out_dir="$(cd -- "${out_dir}" && pwd)"
 # Compile from src with a bare input filename; do not embed maintainer paths.
@@ -35,5 +40,5 @@ for arch in "${architectures[@]}"; do
   "${nvcc_bin}" -O3 -std=c++17 --threads 1 -arch="${arch}" \
     --default-stream per-thread --cudart=static \
     -Xcompiler=-static-libstdc++,-static-libgcc "${include_args[@]}" \
-    GFPPS.cu -o "${out_dir}/GFPPS_${arch}"
+    GFPPS.cu "${gmp_args[@]}" -o "${out_dir}/GFPPS_${arch}"
 done

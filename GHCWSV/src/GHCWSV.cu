@@ -84,7 +84,7 @@ __host__ __device__ bool term_equals_prime(uint32_t b,uint32_t n,int c,uint64_t 
 }
 
 __global__ void sieve_kernel(const uint64_t* primes,size_t count,const uint32_t* ns,
-        size_t nc,uint32_t b,uint32_t sign_mask,uint32_t* alive,uint64_t* factors,bool direct,const uint64_t* coefficients) {
+        size_t nc,uint32_t b,uint32_t sign_mask,uint32_t* alive,uint64_t* factors,bool direct,const uint64_t* coefficients,unsigned* changed) {
     constexpr size_t tile=256;
     const size_t jobs=count*((nc+tile-1)/tile);
     for(size_t job=blockIdx.x*blockDim.x+threadIdx.x;job<jobs;job+=size_t(blockDim.x)*gridDim.x){
@@ -114,9 +114,9 @@ __global__ void sieve_kernel(const uint64_t* primes,size_t count,const uint32_t*
             // Each sign has an independent atomic bit and factor slot. Never
             // remove the opposite sign, and preserve a prime equal to its divisor.
             if((sign_mask&PLUS) && hit_plus && !term_equals_prime(b,ns[i],1,p)
-                    && (atomicAnd(alive+i,~PLUS)&PLUS))factors[2*i]=p;
+                    && (atomicAnd(alive+i,~PLUS)&PLUS)){factors[2*i]=p;if(changed)atomicExch(changed,1u);}
             if((sign_mask&MINUS) && hit_minus && !term_equals_prime(b,ns[i],-1,p)
-                    && (atomicAnd(alive+i,~MINUS)&MINUS))factors[2*i+1]=p;
+                    && (atomicAnd(alive+i,~MINUS)&MINUS)){factors[2*i+1]=p;if(changed)atomicExch(changed,1u);}
             if(i+1<last){uint64_t gap=uint64_t(ns[i+1])-ns[i];
                 uint64_t multiplier=gap<=16?gaps[gap-1]:d_mont_pow_rep(step,gap,mc);
                 value=d_mont_mul(value,multiplier,mc);
@@ -260,18 +260,24 @@ uint64_t number(const std::string& text) {
     return x;
 }
 struct Options {
+#ifdef _WIN32
+    bool host_cache=false;
+#else
+    bool host_cache=true;
+#endif
     std::string input,output,factors,algorithm="auto",work_batching="adaptive";uint64_t base=0,lo=0,hi=0,pmax=0;
     int sign=0,device=0,blocks=0,threads=128,prime_threads=8;
     uint64_t batch=8192,progress=1,checkpoint=60;bool cpu=false,verify=false,sign_given=false;
     PrimeMode prime_mode=PrimeMode::Auto;
 };
-void help(){std::cout<<"GHCWSV 1.2 CUDA - Generalized Hyper-Cullen / Woodall Siever\n"
+void help(){std::cout<<"GHCWSV 1.3 CUDA - Generalized Hyper-Cullen / Woodall Siever\n"
  <<"Generate: GHCWSV -b B -n NMIN -N NMAX --sign +1|-1|both -P PMAX -o FILE\n"
  <<"Resume:   GHCWSV -i FILE -P PMAX -o FILE\n"
  <<"Ranges inclusive; candidates are b^n*n^b+/-1; b,n in [2,2^32-1].\n"
  <<"--algorithm auto|direct|transform --prime-generator auto|primesieve|segmented|mr\n"
  <<"--prime-threads 1..16 --batch-primes N --device N --blocks N --threads N\n"
  <<"--work-batching adaptive|fixed (adaptive; rebuild after 20% fewer n values)\n"
+ <<"--host-cache on|off (Linux default on, Windows default off)\n"
  <<"--progress-seconds N (1) --checkpoint-seconds N (60) --verify\n"
  <<"-O FACTORS (optional) --cpu-reference (small tests, no CUDA calls)\n"
  <<"--selftest runs bounded GPU arithmetic tests.\n"
@@ -286,6 +292,7 @@ Options parse(int argc,char** argv){Options o;
     else if(a=="-i")o.input=next();else if(a=="-o")o.output=next();else if(a=="-O")o.factors=next();
     else if(a=="--algorithm")o.algorithm=next();
     else if(a=="--work-batching")o.work_batching=next();
+    else if(a=="--host-cache"){auto value=next();if(value!="on"&&value!="off")fail("host-cache must be on or off");o.host_cache=value=="on";}
     else if(a=="--cpu-reference")o.cpu=true;else if(a=="--verify")o.verify=true;
     else if(a=="--prime-generator"){auto s=next();if(s=="auto")o.prime_mode=PrimeMode::Auto;
         else if(s=="primesieve")o.prime_mode=PrimeMode::PrimeSieve;else if(s=="segmented")o.prime_mode=PrimeMode::Segmented;
@@ -325,7 +332,7 @@ Queue load(const Options& o){Queue q;
 template<class T>struct Device {T* p=nullptr;~Device(){if(p)cudaFree(p);}void alloc(size_t n){CUDA_CHECK(cudaMalloc(&p,n*sizeof(T)));}};
 int run(int argc,char** argv){
  if(argc==1){help();return 0;}if(argc==2 && std::string(argv[1])=="--selftest")return selftest();
- if(argc==2 && std::string(argv[1])=="--version"){std::cout<<"GHCWSV 1.2\n";return 0;}
+ if(argc==2 && std::string(argv[1])=="--version"){std::cout<<"GHCWSV 1.3\n";return 0;}
  for(int i=1;i<argc;++i)if(std::string(argv[i])=="--help" || std::string(argv[i])=="-h"){help();return 0;}
  auto o=parse(argc,argv);auto q=load(o);auto output=std::filesystem::u8path(o.output);
  if(!o.factors.empty()) {
@@ -340,7 +347,7 @@ int run(int argc,char** argv){
  std::ofstream factors;if(!o.factors.empty()){factors.open(std::filesystem::u8path(o.factors),std::ios::app);if(!factors)fail("cannot open factors output");}
  auto save=[&](){atomic_text(output,serialize(q));auto counts=q.sign_counts();std::cout<<"checkpoint: sieved_to="<<q.p<<", survivors="<<counts.first+counts.second<<", plus="<<counts.first<<", minus="<<counts.second<<", file="<<o.output<<"\n";};
  save();if(q.ns.empty()||q.p==o.pmax)return 0;
- std::cout<<"GHCWSV 1.2: b="<<q.b<<", sign="<<(q.c==0?"both":q.c==1?"+1":"-1")<<", candidates="<<initial<<", n_values="<<q.ns.size()<<", p in ("<<q.p<<","<<o.pmax<<"]\n";
+ std::cout<<"GHCWSV 1.3: b="<<q.b<<", sign="<<(q.c==0?"both":q.c==1?"+1":"-1")<<", candidates="<<initial<<", n_values="<<q.ns.size()<<", p in ("<<q.p<<","<<o.pmax<<"]\n";
  const auto started=std::chrono::steady_clock::now();auto last_progress=started,last_save=started;
   uint64_t prime_count=0,gpu_batches=0;double gpu_seconds=0,wait_seconds=0,accept_seconds=0;
   struct RateSample {double seconds;uint64_t primes,p;};
@@ -401,6 +408,10 @@ int run(int argc,char** argv){
     PrimeStream stream(q.p,o.pmax,producer_batch,o.prime_mode,100000000,8,o.prime_threads,12,4,1,false);
     PrimeBatchPipeline pipeline(stream,4);std::cout<<"Prime generator: "<<stream.description()<<"\n";
     PrimeBatch produced;
+    const bool resident_host_cache=o.host_cache;
+    std::cout<<"host-cache: "<<(resident_host_cache?"on":"off")<<"\n";
+    Device<unsigned> d_changed;d_changed.alloc(1);bool resident_dirty=true;
+    std::vector<uint32_t> alive;std::vector<uint64_t> fs;
     while(!g_interrupted&&!q.ns.empty()&&pipeline.next(produced,wait_seconds)){
       size_t cursor=0;
       while(cursor<produced.count&&!g_interrupted&&!q.ns.empty()){
@@ -411,10 +422,13 @@ int run(int argc,char** argv){
        batch.data=produced.data+cursor;
        batch.count=ghcw_work::next_chunk(produced.count,cursor,sizing.selected());
        auto begin=std::chrono::steady_clock::now();size_t count=q.ns.size();
-       CUDA_CHECK(cudaMemcpy(dn.p,q.ns.data(),count*4,cudaMemcpyHostToDevice));
-       std::vector<uint32_t> alive=q.masks;std::vector<uint64_t> fs(2*count);
-       CUDA_CHECK(cudaMemcpy(da.p,alive.data(),count*4,cudaMemcpyHostToDevice));
-       CUDA_CHECK(cudaMemset(df.p,0,count*16));
+       alive.resize(count);fs.resize(2*count);
+       if(!resident_host_cache||resident_dirty){
+           CUDA_CHECK(cudaMemcpy(dn.p,q.ns.data(),count*4,cudaMemcpyHostToDevice));
+           CUDA_CHECK(cudaMemcpy(da.p,q.masks.data(),count*4,cudaMemcpyHostToDevice));
+           CUDA_CHECK(cudaMemset(df.p,0,count*16));resident_dirty=false;
+       }
+       if(resident_host_cache)CUDA_CHECK(cudaMemset(d_changed.p,0,sizeof(unsigned)));
        size_t root_count=0;std::vector<uint64_t> ordered,coefficients;
        // When every n^b fits below this batch's smallest prime, coefficients
        // can be prepared once on the CPU and compared directly without a pow.
@@ -434,18 +448,22 @@ int run(int argc,char** argv){
            auto launch=[&](size_t pi,size_t np,bool direct){if(!np)return;
                size_t jobs=np*((take+255)/256);
                int blocks=o.blocks?o.blocks:std::max(1,std::min(int((jobs+o.threads-1)/o.threads),prop.multiProcessorCount*4));
-               sieve_kernel<<<blocks,o.threads>>>(dp.p+pi,np,dn.p+offset,take,q.b,q.sign_mask(),da.p+offset,df.p+2*offset,direct,coefficients.empty()?nullptr:dc.p+offset);
+               sieve_kernel<<<blocks,o.threads>>>(dp.p+pi,np,dn.p+offset,take,q.b,q.sign_mask(),da.p+offset,df.p+2*offset,direct,coefficients.empty()?nullptr:dc.p+offset,resident_host_cache?d_changed.p:nullptr);
                CUDA_CHECK(cudaGetLastError());CUDA_CHECK(cudaDeviceSynchronize());
            };
            // Keep each warp on one arithmetic path. The original sorted batch
            // boundary is committed only after BOTH groups and all tiles finish.
            launch(0,root_count,false);launch(root_count,batch.count-root_count,true);
        }
-       CUDA_CHECK(cudaMemcpy(alive.data(),da.p,count*4,cudaMemcpyDeviceToHost));
-       CUDA_CHECK(cudaMemcpy(fs.data(),df.p,count*16,cudaMemcpyDeviceToHost));
+       unsigned changed=1;
+       if(resident_host_cache)CUDA_CHECK(cudaMemcpy(&changed,d_changed.p,sizeof(changed),cudaMemcpyDeviceToHost));
+       if(changed){
+           CUDA_CHECK(cudaMemcpy(alive.data(),da.p,count*4,cudaMemcpyDeviceToHost));
+           CUDA_CHECK(cudaMemcpy(fs.data(),df.p,count*16,cudaMemcpyDeviceToHost));
+       }
        gpu_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
        const auto accept_start=std::chrono::steady_clock::now();
-       accept(alive,fs);accept_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-accept_start).count();
+       if(changed){accept(alive,fs);resident_dirty=true;}accept_seconds+=std::chrono::duration<double>(std::chrono::steady_clock::now()-accept_start).count();
        // Commit only this fully completed chunk. The producer's remaining tail
        // stays owned by 'produced', including across workset resize/checkpoint.
        q.p=batch.last();prime_count+=batch.count;++gpu_batches;cursor+=batch.count;report(false);
@@ -472,7 +490,7 @@ void display_banner() {
     printf("%s\n","       `Y8bood8P'   Y8P o888o   o888o Y8P  `Y8bood8P'  Y8P     `8'      `8'     Y8P 8''88888P'  Y8P     `8'     Y8P      ");
     printf("%s\n","\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90\xE2\x95\x90");
     printf("%s\n","                                        Generalized Hyper Cullen / Woodall Siever                                        ");
-    printf("%s\n","                                            Version 1.2 CUDA by A.P. Sep 2026                                            ");
+    printf("%s\n","                                            Version 1.3 CUDA by A.P. Sep 2026                                            ");
 }
 
 int main(int argc,char** argv){prp_console::initialize_utf8_output();std::cout.setf(std::ios::unitbuf);
