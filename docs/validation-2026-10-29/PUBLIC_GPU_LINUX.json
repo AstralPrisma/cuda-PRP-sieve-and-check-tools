@@ -1,0 +1,84 @@
+{
+  "ok": true,
+  "test_hardware": "RTX 4060 Laptop, sm_89, linux CUDA13.3",
+  "records": [
+    {
+      "tool": "CSSV",
+      "sha256": "bf7f4eb9a59f39480ac11cc70fa3d6467afbb1816c245a1cb41b697cc71c6439",
+      "test": "cssv-1-cpu",
+      "exit": 0
+    },
+    {
+      "tool": "CSSV",
+      "sha256": "bf7f4eb9a59f39480ac11cc70fa3d6467afbb1816c245a1cb41b697cc71c6439",
+      "test": "cssv-1-gpu",
+      "exit": 0
+    },
+    {
+      "tool": "CSSV",
+      "sha256": "bf7f4eb9a59f39480ac11cc70fa3d6467afbb1816c245a1cb41b697cc71c6439",
+      "test": "cssv-2-cpu",
+      "exit": 0
+    },
+    {
+      "tool": "CSSV",
+      "sha256": "bf7f4eb9a59f39480ac11cc70fa3d6467afbb1816c245a1cb41b697cc71c6439",
+      "test": "cssv-2-gpu",
+      "exit": 0
+    },
+    {
+      "tool": "CSPS",
+      "sha256": "3bcd4f9b0ba519229f505af23beb1eda294c71f2367e17b5ddb8e1e9b339c9bb",
+      "test": "csps-6-1",
+      "exit": 0
+    },
+    {
+      "tool": "CSPS",
+      "sha256": "3bcd4f9b0ba519229f505af23beb1eda294c71f2367e17b5ddb8e1e9b339c9bb",
+      "test": "csps-8-2",
+      "exit": 0
+    },
+    {
+      "tool": "CSPS",
+      "sha256": "3bcd4f9b0ba519229f505af23beb1eda294c71f2367e17b5ddb8e1e9b339c9bb",
+      "test": "csps-7-1",
+      "exit": 0
+    },
+    {
+      "tool": "GHCWSV",
+      "sha256": "3b86592fd5665405d7ddf173149c17ebc510cc00493ed55e62d7f38b0d2d3bbf",
+      "test": "ghcwsv-selftest",
+      "exit": 0
+    },
+    {
+      "tool": "GHCWSV",
+      "sha256": "3b86592fd5665405d7ddf173149c17ebc510cc00493ed55e62d7f38b0d2d3bbf",
+      "test": "ghcw-cpu",
+      "exit": 0
+    },
+    {
+      "tool": "GHCWSV",
+      "sha256": "3b86592fd5665405d7ddf173149c17ebc510cc00493ed55e62d7f38b0d2d3bbf",
+      "test": "ghcw-gpu",
+      "exit": 0
+    },
+    {
+      "tool": "GPRSV",
+      "sha256": "518463b6b72bbe78a6ea43c75ec379c5088393e058d9846adceb5f282a55ea8c",
+      "test": "gprsv-segmented",
+      "exit": 0
+    },
+    {
+      "tool": "GPRSV",
+      "sha256": "518463b6b72bbe78a6ea43c75ec379c5088393e058d9846adceb5f282a55ea8c",
+      "test": "gprsv-primesieve",
+      "exit": 0
+    }
+  ],
+  "checks": [
+    "CSSV CPU/GPU survivors agree for both steps and both signs",
+    "CSPS exact cpp_int matches",
+    "GHCWSV device selftest and CPU/GPU survivors with host-cache enabled across multiple batches",
+    "GPRSV generator paths agree with factor verification"
+  ]
+}

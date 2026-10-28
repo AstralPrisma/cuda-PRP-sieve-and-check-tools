@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "test_hardware": "RTX 4060 Laptop, sm_89, Windows CUDA13.3",
+  "test_hardware": "RTX 4060 Laptop, sm_89, windows CUDA13.3",
   "records": [
     {
       "tool": "CSSV",
@@ -78,7 +78,7 @@
   "checks": [
     "CSSV CPU/GPU survivors agree for both steps and both signs",
     "CSPS exact cpp_int matches",
-    "GHCWSV device selftest and CPU/GPU survivors",
+    "GHCWSV device selftest and CPU/GPU survivors with host-cache enabled across multiple batches",
     "GPRSV generator paths agree with factor verification"
   ]
 }
