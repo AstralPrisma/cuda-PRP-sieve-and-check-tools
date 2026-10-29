@@ -7,6 +7,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sstream>
+#include <iomanip>
 
 namespace gfpdiv_cuda {
 using u64 = uint64_t;
@@ -121,11 +123,15 @@ struct Backend::Impl {
     int chains;
     uint32_t tile;
     double elapsed=0;
+    std::string identity;
     Impl(const Groups& input, int device, int c, uint32_t t):chains(c),tile(t) {
         if ((chains!=1&&chains!=2&&chains!=4&&chains!=8)||tile<8||tile%8)
             throw std::runtime_error("CUDA chains must be1/2/4/8; tile must be a positive multiple of8");
         check(cudaSetDevice(device),"select CUDA device");
         cudaDeviceProp prop{};check(cudaGetDeviceProperties(&prop,device),"query CUDA device");
+        int driver=0,runtime=0;check(cudaDriverGetVersion(&driver),"query CUDA driver version");check(cudaRuntimeGetVersion(&runtime),"query CUDA runtime version");
+        std::ostringstream key;key<<prop.major<<'.'<<prop.minor<<':'<<prop.multiProcessorCount<<':'<<driver<<':'<<runtime<<':'<<chains<<':'<<tile<<':';
+        key<<std::hex<<std::setfill('0');for(unsigned char byte:prop.uuid.bytes)key<<std::setw(2)<<unsigned(byte);identity=key.str();
         std::cout<<"CUDA device="<<prop.name<<", SMs="<<prop.multiProcessorCount
                  <<", independent_chains="<<chains<<", tile_chunks="<<tile<<"\n";
         check(cudaStreamCreateWithFlags(&stream,cudaStreamNonBlocking),"create CUDA stream");
@@ -202,6 +208,8 @@ Backend::~Backend()=default;
 bool Backend::remainders(const std::vector<u64>& p,std::vector<u64>& r,
                          const std::function<bool()>& stop) { return impl_->calculate(p,r,stop); }
 double Backend::stream_seconds()const{return impl_->elapsed;}
+std::string Backend::tuning_identity()const{return impl_->identity;}
+void Backend::reset_timing(){impl_->elapsed=0;}
 
 int selftest() {
     using boost::multiprecision::uint128_t;

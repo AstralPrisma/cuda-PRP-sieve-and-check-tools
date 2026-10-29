@@ -39,6 +39,6 @@ for arch in "${architectures[@]}"; do
   [[ "${arch}" =~ ^sm_[0-9]+$ ]] || { printf 'Invalid architecture: %s\n' "${arch}" >&2; exit 1; }
   "${nvcc_bin}" -O3 -std=c++17 --threads 1 -arch="${arch}" \
     --default-stream per-thread --cudart=static \
-    -Xcompiler=-static-libstdc++,-static-libgcc "${include_args[@]}" \
-    GFPDIVSV.cu cuda_backend.cu "${gmp_args[@]}" -o "${out_dir}/GFPDIVSV_${arch}"
+    -Xcompiler=-static-libstdc++,-static-libgcc,-pthread "${include_args[@]}" \
+    GFPDIVSV.cu cuda_backend.cu "${gmp_args[@]}" -ldl -o "${out_dir}/GFPDIVSV_${arch}"
 done

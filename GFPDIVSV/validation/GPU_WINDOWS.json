@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "program": "GFPDIVSV1.0 CUDA",
+  "program": "GFPDIVSV1.1 CUDA",
   "binary": "GFPDIVSV_sm_89.exe",
-  "sha256": "f812cb48643828315532cdb3dcc0ffa5e033176709b8abf49f030bc7d8290e57",
+  "sha256": "07a40a2ab5ae70be3542895808f4bbc0ec6906d05d8f599fc8da2007a806662b",
   "exhaustive_searches": 86,
   "selftest_modular_comparisons": 2816,
   "checks": [

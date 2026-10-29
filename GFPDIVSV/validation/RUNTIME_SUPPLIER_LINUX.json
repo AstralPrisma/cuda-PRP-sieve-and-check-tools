@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "binary_sha256": "8d7d2a0668651b613b4a956c93b49c2303597e07cd350ac5d3957fa886612bc8",
+  "committed_depth": 1555768073099,
+  "snapshot_sha256": "e6df3b238e9d2f224e0a0149b2b960768307fa1bb2c9a6c80519d23d19ba9928",
+  "byte_identical_to_legacy": true,
+  "probes": [
+    "supplier_probe: threads=1, primes_per_s=1.79333e+07, wait_fraction=0.437474, next=2, frozen=0",
+    "supplier_probe: threads=2, primes_per_s=2.2605e+07, wait_fraction=0.228322, next=4, frozen=0",
+    "supplier_probe: threads=4, primes_per_s=3.02301e+07, wait_fraction=0.0310079, next=4, frozen=1"
+  ]
+}

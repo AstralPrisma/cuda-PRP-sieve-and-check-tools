@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "program": "GFPDIVSV1.1 CUDA",
+  "binary": "GFPDIVSV_sm_89",
+  "sha256": "8d7d2a0668651b613b4a956c93b49c2303597e07cd350ac5d3957fa886612bc8",
+  "checks": [
+    "supplier starvation/rollback/freeze policy:12 checks",
+    "32 exact prime-sequence comparisons",
+    "cold/hot calibration does not advance or alter search state",
+    "resource-configuration changes invalidate the profile",
+    "checksum-corrupt profile is recalibrated",
+    "validly checksummed hardware/task mismatch is recalibrated",
+    "unrelated cache target is preserved",
+    "manual batch/thread overrides honored",
+    "explicit non-auto modes bypass all calibration",
+    "profile cannot overwrite input/output snapshots",
+    "stop before calibration does not falsely mark COMPLETE",
+    "prime endpoint and partial tail",
+    "interrupted calibration never commits pilot work"
+  ]
+}

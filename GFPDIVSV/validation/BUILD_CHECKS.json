@@ -3,58 +3,58 @@
     {
       "platform": "windows",
       "file": "GFPDIVSV_sm_86.exe",
-      "sha256": "5e951784c20a579660e83a43f46cfb60269117c0d098949cbb13a846f634a1cd",
+      "sha256": "e373ba25c9f1961f185d583afae438eb49a0f8db5844ea92c3ac8b23cde784ce",
       "runtime_tested": false,
-      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+      "evidence": "Native cubin/PTX; help and host supplier-policy selftest; no matching physical GPU tested"
     },
     {
       "platform": "windows",
       "file": "GFPDIVSV_sm_89.exe",
-      "sha256": "f812cb48643828315532cdb3dcc0ffa5e033176709b8abf49f030bc7d8290e57",
+      "sha256": "07a40a2ab5ae70be3542895808f4bbc0ec6906d05d8f599fc8da2007a806662b",
       "runtime_tested": true,
-      "evidence": "GPU_WINDOWS.json: RTX4060 Laptop"
+      "evidence": "GPU_WINDOWS_FINAL.json and AUTO_WINDOWS_FINAL.json:RTX4060 Laptop"
     },
     {
       "platform": "windows",
       "file": "GFPDIVSV_sm_100.exe",
-      "sha256": "ca827bd9c983479c0e49d27c0b289ea079d9434ad88aa2ffe78476f0d31ba2a9",
+      "sha256": "23697948869bd4c194ec126bed6c50f34ce3594f905cbb4ee5f58637a5129b86",
       "runtime_tested": false,
-      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+      "evidence": "Native cubin/PTX; help and host supplier-policy selftest; no matching physical GPU tested"
     },
     {
       "platform": "windows",
       "file": "GFPDIVSV_sm_120.exe",
-      "sha256": "a55c1d45d8600e608be9d2a11a1cc770ef76bd8b30cbd15185ac8edd9d309c26",
+      "sha256": "349fbebdacef3c88749d189f7a449ef306f623c90d90830e59c5bea014a7eec7",
       "runtime_tested": false,
-      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+      "evidence": "Native cubin/PTX; help and host supplier-policy selftest; no matching physical GPU tested"
     },
     {
       "platform": "linux",
       "file": "GFPDIVSV_sm_86",
-      "sha256": "2528baea5986358a662cc86380345dfd2f983c29037846b78b803864f5008edd",
+      "sha256": "607c817e8c38ba0adf846cd0d1c988fcfaf6cdb68936c2b016b83084d6ecf62d",
       "runtime_tested": false,
-      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+      "evidence": "Native cubin/PTX; help and host supplier-policy selftest; no matching physical GPU tested"
     },
     {
       "platform": "linux",
       "file": "GFPDIVSV_sm_89",
-      "sha256": "5e785a158c043e66fe0588328009154e197f54170f11dcad748fd09c3c4c32a6",
+      "sha256": "8d7d2a0668651b613b4a956c93b49c2303597e07cd350ac5d3957fa886612bc8",
       "runtime_tested": true,
-      "evidence": "GPU_LINUX.json: RTX4060 Laptop"
+      "evidence": "GPU_LINUX_FINAL.json and AUTO_LINUX_FINAL.json:RTX4060 Laptop"
     },
     {
       "platform": "linux",
       "file": "GFPDIVSV_sm_100",
-      "sha256": "795ed22b9a8a097e8acda07173d2f1c0d3c1c08f82539161b8e556dde293a0cf",
+      "sha256": "d316ad99a3396cbecab6b277de92170fc347687a622bbcdcce34fe28c02f3ff0",
       "runtime_tested": false,
-      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+      "evidence": "Native cubin/PTX; help and host supplier-policy selftest; no matching physical GPU tested"
     },
     {
       "platform": "linux",
       "file": "GFPDIVSV_sm_120",
-      "sha256": "d5a18f0fc610780b4487a511ee805dbad3f72751c152fbd7c99c9d1564ba7a7d",
+      "sha256": "dca170a93588a4c179b4c9be5781bf00e8e1767c2db97932cb23be5d8c5f1612",
       "runtime_tested": false,
-      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+      "evidence": "Native cubin/PTX; help and host supplier-policy selftest; no matching physical GPU tested"
     }
   ],
   "cuda_only": true,

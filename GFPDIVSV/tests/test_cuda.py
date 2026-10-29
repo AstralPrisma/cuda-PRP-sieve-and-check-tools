@@ -76,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='gfpdivsv-cuda-check-')as directory:
     source=work/'factorial-31.txt';out=work/'tasks'
     subprocess.run([sys.executable,str(tool/'scripts/gfpdivsv_to_tasks.py'),str(source),'--out-dir',str(out)],check=True,capture_output=True)
     assert len(list(out.glob('*.txt')))==len(read_snapshot(source)[1])
-report={'ok':True,'program':'GFPDIVSV1.0 CUDA','binary':binary.name,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),
+report={'ok':True,'program':'GFPDIVSV1.1 CUDA','binary':binary.name,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),
         'exhaustive_searches':86,'selftest_modular_comparisons':2816,
         'checks':['independent exact integer oracle','single and dual signs','raw and valuation products','chain1/2/4/8','unaligned batch tails','checked continuation','damage and mismatch rejection','safe interruption and resume','partial frontier','offline conversion','no host-only sieve mode']}
 if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')

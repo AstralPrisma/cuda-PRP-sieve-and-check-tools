@@ -19,3 +19,17 @@ the exact executable hashes and test counts.
 Run `python tests/test_cuda.py --binary /path/to/GFPDIVSV_sm_89` on a matching
 GPU after pausing other GPU workloads. This is a correctness test, not a benchmark.
 No tests upload tasks, use account credentials or alter production data.
+
+Version1.1 also validates32 prime-sequence comparisons across legacy arrays,
+persistent iterators and ordered producer queues, plus12 deterministic supplier
+policy checks (starvation, minimum3% gain, rollback, freeze and resource cap).
+`tests/test_auto.py` checks cold/warm profiles, resource-key invalidation,
+corrupt or mismatched profile rejection, unrelated-file preservation, manual
+overrides, prime endpoints and safe interruption before/during calibration.
+These tests run on both Windows and WSL sm_89 release binaries; their exact
+hashes are recorded in`validation/AUTO_WINDOWS.json` and`AUTO_LINUX.json`.
+
+Calibration operates on disposable states and compares complete residue streams
+and survivor masks across batch choices. Every proposed factor remains subject
+to independent exact verification. Real task progress is committed only after
+a full batch completes; prefetched/generated ranges do not constitute progress.

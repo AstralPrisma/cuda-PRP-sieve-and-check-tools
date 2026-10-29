@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.10.29.1",
+    [string]$SuiteVersion = "v2026.10.29.2",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
@@ -26,7 +26,7 @@ $versions = [ordered]@{
     GHCWPS = "1.2"
     CSPS = "1.0"
     CSSV = "1.3"
-    GFPDIVSV = "1.0"
+    GFPDIVSV = "1.1"
 }
 $selected = [ordered]@{}
 foreach ($tool in $Tools) { $selected[$tool] = $versions[$tool] }

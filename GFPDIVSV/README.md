@@ -1,4 +1,4 @@
-# GFPDIVSV 1.0 CUDA
+# GFPDIVSV 1.1 CUDA
 
 Generalized Factorial / Primorial Factor-Removal Siever.
 Fix `A=n!` or `A=n#`, remove one allowed divisor, and sieve `A/d-1`,
@@ -55,6 +55,52 @@ survivors to SHA-256. Keep this file for continuation; factor logs are optional.
   `--gpu-tile-chunks N` control GPU selection and batching. See `--help` for bounds.
 - Never let two processes write the same snapshot. Different candidates keep independent PRP checkpoints.
 
+## Adaptive batching and prime supply
+
+The default `--prime-mode auto` measures real work on the selected GPU rather
+than assuming that more CPU threads or a larger batch is always faster. A cold
+profile compares fixed, identical prime samples using batches32,768 /131,072 /
+262,144 /524,288. Each trial checks every proposed factor using independent
+exact arithmetic and operates on a disposable copy of the survivor mask.
+Calibration never advances the actual checkpoint or writes trial factors.
+The smallest batch within3% of the best measured throughput is preferred.
+
+If prime generation is negligible, auto keeps a synchronous persistent iterator.
+Otherwise a bounded, ordered producer queue overlaps prime generation with CUDA.
+It starts with one supplier thread. During real work, sustained supplier waiting
+above8% may trigger a larger supplier count, capped by CPU and memory estimates.
+A change must improve throughput by at least3%; otherwise the previous count is
+restored and the decision is frozen for this run. No work is skipped when a queue
+is replaced: only fully verified batches advance the saved frontier.
+
+Profiles are checksummed sidecars, `OUTPUT.tuning` by default. Their identity
+includes GPU UUID/architecture/SM count, driver/runtime, arithmetic configuration,
+mother-product hash, divisor/sign domain, survivor-density/depth buckets,
+prime-region span, primesieve identity and CPU count. Invalid or
+mismatched profiles are recalibrated. Unrelated files are never overwritten.
+Removing a profile is safe; it only makes the next run calibrate again.
+
+```sh
+# Automatic, including cached calibration:
+./bin/GFPDIVSV_sm_89 -i survivors.txt -P 2e12
+# Recalibrate or select a separate profile:
+./bin/GFPDIVSV_sm_89 -i survivors.txt -P 2e12 --retune --tuning-cache run.tuning
+# Pin the resources while retaining auto mode:
+./bin/GFPDIVSV_sm_89 -i survivors.txt -P 2e12 --batch-primes 262144 --prime-threads 1
+# Fully manual pipeline; no calibration or profile writes:
+./bin/GFPDIVSV_sm_89 -i survivors.txt -P 2e12 --prime-mode pipeline --prime-threads 1 --batch-primes 262144
+```
+
+`--prime-mode iterator` and `array` are synchronous manual alternatives; `array`
+retains the legacy array-generation path for diagnosis. Multiple supplier threads
+require `auto` or `pipeline`. A manual `--prime-threads` overrides the automatic
+thread cap; the user is responsible for its memory budget. Calibration adds cold
+startup work; cached profiles avoid repeating it. Performance is task- and
+hardware-dependent, and high GPU utilization alone is not the tuning objective.
+
+Run `tests/test_auto.py` with `--binary` and `--report` to check cache safety,
+manual overrides, ordered prime streams, supplier hysteresis and interruption.
+
 ## Runtime libraries
 
 Release packages include primesieve12.x in `bin/lib/`, with its BSD notice.
@@ -62,6 +108,8 @@ The program searches its executable directory, then its `lib/` directory,
 then system library locations. An explicit `--primesieve-library FILE` or
 `GFPDIVSV_PRIMESIEVE_LIBRARY` can select another compatible library.
 An explicitly invalid library is an error; there is no fixed maintainer path.
+Persistent/parallel suppliers require the bundled primesieve12.x iterator ABI;
+an incompatible iterator version is rejected rather than assumed compatible.
 Without primesieve, the bounded built-in generator supports only targets up to`1e12`.
 
 Official Linux binaries target Ubuntu22.04+ and statically link GMP6.3.0 for
@@ -98,3 +146,8 @@ GFPDIVSV固定`n!`或`n#`，移除单个允许的因子，再同时或单独筛�
 本次仅发布CUDA筛子，保留必要的主机构造和独立因子复核，不提供独立CPU筛分版本。
 候选文件可自包含续筛及归档，并可用配套脚本拆成GFPPS任务；幸存不等于质数。
 Windows/Linux分别提供四种SM程序，实际显卡验收范围以发布元数据为准。
+
+1.1默认按实际计时自适应选择批量及质数供数方式，支持持续迭代器和有界并行预取。
+只有供数不足且增加线程后的吞吐收益至少3%时才保留更多线程，否则回退并冻结。
+调优使用独立副本，不推进真实断点、不重复记录因子；旁边的`.tuning`文件只是可删除的性能缓存。
+`--batch-primes`和`--prime-threads`可手动覆盖；显式选择非auto模式则完全关闭自动调优。

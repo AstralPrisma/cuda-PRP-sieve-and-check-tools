@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <string>
 
 namespace gfpdiv_cuda {
 // Groups are in descending binary-weight order. For every group:
@@ -20,6 +21,8 @@ public:
                     std::vector<uint64_t>& output,
                     const std::function<bool()>& should_stop);
     double stream_seconds() const;
+    std::string tuning_identity() const;
+    void reset_timing();
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
