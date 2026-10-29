@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "program": "GFPDIVSV1.0 CUDA",
+  "binary": "GFPDIVSV_sm_89.exe",
+  "sha256": "f812cb48643828315532cdb3dcc0ffa5e033176709b8abf49f030bc7d8290e57",
+  "exhaustive_searches": 86,
+  "selftest_modular_comparisons": 2816,
+  "checks": [
+    "independent exact integer oracle",
+    "single and dual signs",
+    "raw and valuation products",
+    "chain1/2/4/8",
+    "unaligned batch tails",
+    "checked continuation",
+    "damage and mismatch rejection",
+    "safe interruption and resume",
+    "partial frontier",
+    "offline conversion",
+    "no host-only sieve mode"
+  ]
+}

@@ -1,3 +1,9 @@
+# 2026.10.29.1
+
+- Add GFPDIVSV1.0 CUDA for factorial/primorial single-factor removal, dual signs, exact factor verification, atomic snapshots and offline GFPPS task conversion.
+- Provide four native targets on Windows/Linux with bundled primesieve; Linux host arithmetic statically links GMP with corresponding source included.
+- Other ten tools and their binaries are unchanged.
+
 # 2026.10.29
 
 - Add CSPS 1.0 and CSSV 1.3 for consecutive/alternate Catena Siderum power products. CSSV supports independent signs, scientific sieve bounds, periodic checked recovery and offline task conversion.

@@ -8,7 +8,7 @@ if (( $# > 0 )); then shift; fi
 architectures=("$@")
 
 mkdir -p "${out_dir}"
-for tool in GFPS GPRPS GFPPS GFNSV GPRSV GNCWSV GHCWSV GHCWPS CSPS CSSV; do
+for tool in GFPS GPRPS GFPPS GFNSV GPRSV GNCWSV GHCWSV GHCWPS CSPS CSSV GFPDIVSV; do
   if (( ${#architectures[@]} > 0 )); then
     "${repo_dir}/${tool}/scripts/build-linux.sh" "${out_dir}" "${architectures[@]}"
   else

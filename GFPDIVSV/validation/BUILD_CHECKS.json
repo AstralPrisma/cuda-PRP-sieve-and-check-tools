@@ -1,0 +1,64 @@
+{
+  "native_architecture_and_startup_checks": [
+    {
+      "platform": "windows",
+      "file": "GFPDIVSV_sm_86.exe",
+      "sha256": "5e951784c20a579660e83a43f46cfb60269117c0d098949cbb13a846f634a1cd",
+      "runtime_tested": false,
+      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+    },
+    {
+      "platform": "windows",
+      "file": "GFPDIVSV_sm_89.exe",
+      "sha256": "f812cb48643828315532cdb3dcc0ffa5e033176709b8abf49f030bc7d8290e57",
+      "runtime_tested": true,
+      "evidence": "GPU_WINDOWS.json: RTX4060 Laptop"
+    },
+    {
+      "platform": "windows",
+      "file": "GFPDIVSV_sm_100.exe",
+      "sha256": "ca827bd9c983479c0e49d27c0b289ea079d9434ad88aa2ffe78476f0d31ba2a9",
+      "runtime_tested": false,
+      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+    },
+    {
+      "platform": "windows",
+      "file": "GFPDIVSV_sm_120.exe",
+      "sha256": "a55c1d45d8600e608be9d2a11a1cc770ef76bd8b30cbd15185ac8edd9d309c26",
+      "runtime_tested": false,
+      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+    },
+    {
+      "platform": "linux",
+      "file": "GFPDIVSV_sm_86",
+      "sha256": "2528baea5986358a662cc86380345dfd2f983c29037846b78b803864f5008edd",
+      "runtime_tested": false,
+      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+    },
+    {
+      "platform": "linux",
+      "file": "GFPDIVSV_sm_89",
+      "sha256": "5e785a158c043e66fe0588328009154e197f54170f11dcad748fd09c3c4c32a6",
+      "runtime_tested": true,
+      "evidence": "GPU_LINUX.json: RTX4060 Laptop"
+    },
+    {
+      "platform": "linux",
+      "file": "GFPDIVSV_sm_100",
+      "sha256": "795ed22b9a8a097e8acda07173d2f1c0d3c1c08f82539161b8e556dde293a0cf",
+      "runtime_tested": false,
+      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+    },
+    {
+      "platform": "linux",
+      "file": "GFPDIVSV_sm_120",
+      "sha256": "d5a18f0fc610780b4487a511ee805dbad3f72751c152fbd7c99c9d1564ba7a7d",
+      "runtime_tested": false,
+      "evidence": "Native cubin and CPU-only help startup checked; no matching physical GPU tested"
+    }
+  ],
+  "cuda_only": true,
+  "matching_hardware_tested": [
+    "RTX4060 Laptop sm_89"
+  ]
+}

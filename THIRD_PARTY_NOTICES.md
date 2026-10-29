@@ -25,6 +25,8 @@ Upstream project: <https://github.com/primesearch/mtsieve>
 GPRSV, GNCWSV and GHCWSV can optionally load the primesieve iterator API at runtime for
 prime generation. The programs also provide a built-in generator and do not
 require primesieve to start.
+CSSV and GFPDIVSV also use optional primesieve runtime APIs; their release
+packages include the compatible library and its copyright notice.
 
 primesieve is distributed under the BSD 2-Clause license. A copy is included at
 [`LICENSES/primesieve-BSD-2-Clause.txt`](LICENSES/primesieve-BSD-2-Clause.txt).
@@ -33,7 +35,7 @@ Upstream project: <https://github.com/kimwalisch/primesieve>
 
 ## Boost.Multiprecision
 
-GFPS, GPRPS, GFPPS, GHCWSV and GHCWPS use Boost.Multiprecision headers for host-side exact-integer
+GFPS, GPRPS, GFPPS, GHCWSV, GHCWPS, CSPS and GFPDIVSV use Boost.Multiprecision headers for host-side exact-integer
 operations and verification paths. The Windows GFNSV build uses Boost's
 fixed-width unsigned 128-bit type for host-side arithmetic. Boost is distributed under the Boost
 Software License, version 1.0.
@@ -56,7 +58,7 @@ Upstream project: <https://github.com/NVIDIA/cccl>
 
 ## NVIDIA CUDA Toolkit and runtime
 
-All ten tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
+All eleven tools require NVIDIA CUDA to build and an appropriate NVIDIA driver
 and GPU to execute. The CUDA toolkit, headers, compiler, driver, and any
 redistributable runtime components remain subject to NVIDIA's licenses and EULA.
 They are not relicensed by this repository's GPL license.
@@ -82,7 +84,7 @@ certificate.
 
 ## License relationship
 
-Official Linux GFPPS1.1 builds statically link GNU GMP6.3.0 for host-only
+Official Linux GFPPS1.1 and GFPDIVSV1.0 builds statically link GNU GMP6.3.0 for host-only
 candidate construction and Montgomery parameters. GMP is third-party CPU
 arithmetic software, not a separate checker or CUDA engine. GMP is available
 under GPL-2.0-or-later or LGPL-3.0-or-later; see the unmodified upstream source

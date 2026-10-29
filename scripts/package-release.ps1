@@ -1,11 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$SuiteVersion = "v2026.10.29",
+    [string]$SuiteVersion = "v2026.10.29.1",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
-    [ValidateSet('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV')]
-    [string[]]$Tools = @('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV')
+    [ValidateSet('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')]
+    [string[]]$Tools = @('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +26,7 @@ $versions = [ordered]@{
     GHCWPS = "1.2"
     CSPS = "1.0"
     CSSV = "1.3"
+    GFPDIVSV = "1.0"
 }
 $selected = [ordered]@{}
 foreach ($tool in $Tools) { $selected[$tool] = $versions[$tool] }
@@ -92,6 +93,11 @@ function Get-SupportingFiles([string]$Tool) {
     }
     if ($Tool -eq "CSSV") {
         foreach ($name in @('scripts/cssv_to_tasks.py','scripts/catena.py','scripts/csps_tasks.py')) {
+            $records[$name] = Get-Sha256 (Join-Path (Join-Path $repoDirectory $Tool) $name)
+        }
+    }
+    if ($Tool -eq 'GFPDIVSV') {
+        foreach ($name in @('scripts/candidates.py','scripts/gfpdivsv_to_tasks.py')) {
             $records[$name] = Get-Sha256 (Join-Path (Join-Path $repoDirectory $Tool) $name)
         }
     }
@@ -196,10 +202,10 @@ try {
                 }
             }
 
-            if ($tool -in @('GPRSV','GHCWSV','CSSV')) {
+            if ($tool -in @('GPRSV','GHCWSV','CSSV','GFPDIVSV')) {
                 # GPRSV/GHCWSV on Windows use the executable-directory loader;
                 # CSSV and all Linux variants explicitly search bin/lib.
-                $runtimeStage = if ($platform -eq 'windows' -and $tool -ne 'CSSV') { $binStage } else { Join-Path $binStage 'lib' }
+                $runtimeStage = if ($platform -eq 'windows' -and $tool -in @('GPRSV','GHCWSV')) { $binStage } else { Join-Path $binStage 'lib' }
                 [IO.Directory]::CreateDirectory($runtimeStage) | Out-Null
                 $runtimeName = if ($platform -eq 'windows') { 'primesieve.dll' } else { 'libprimesieve.so.12' }
                 foreach ($name in @($runtimeName,'COPYING.primesieve')) {
@@ -225,7 +231,7 @@ try {
                     throw "Supporting file hash mismatch: $tool/$name"
                 }
             }
-            if ($tool -eq 'GFPPS' -and $platform -eq 'linux') {
+            if ($tool -in @('GFPPS','GFPDIVSV') -and $platform -eq 'linux') {
                 $gmpSource = Join-Path $rawPath 'gmp-6.3.0.tar.xz'
                 if (-not [IO.File]::Exists($gmpSource) -or (Get-Sha256 $gmpSource) -ne 'a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898') { throw 'Missing or mismatched corresponding GMP source' }
                 [IO.File]::Copy($gmpSource, (Join-Path $licensesStage 'gmp-6.3.0.tar.xz'), $true)
