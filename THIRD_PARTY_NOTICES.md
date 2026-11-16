@@ -6,8 +6,8 @@ texts.
 
 ## mtsieve / twinsieve
 
-GPRSV is a CUDA port/reimplementation derived from the GPLv2-or-later mtsieve
-twinsieve code. Its source records the original CPU TwinApp/TwinWorker copyright
+GPRSV_K (formerly GPRSV) and its fixed-`k` companion GPRSV_N are CUDA
+port/reimplementations derived from the GPLv2-or-later mtsieve twinsieve code. Its source records the original CPU TwinApp/TwinWorker copyright
 as:
 
 ```text
@@ -22,8 +22,8 @@ Upstream project: <https://github.com/primesearch/mtsieve>
 
 ## primesieve
 
-GPRSV, GNCWSV and GHCWSV can optionally load the primesieve iterator API at runtime for
-prime generation. The programs also provide a built-in generator and do not
+GPRSV_K, GPRSV_N, GNCWSV and GHCWSV can optionally load the primesieve iterator API
+at runtime for prime generation. The programs also provide a built-in generator and do not
 require primesieve to start.
 CSSV and GFPDIVSV also use optional primesieve runtime APIs; their release
 packages include the compatible library and its copyright notice.
