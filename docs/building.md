@@ -13,7 +13,7 @@ for all GPU generations.
 - Boost headers for GFPS, GPRPS, and GFPPS, and for GFNSV on Windows.
 - CUB/CCCL from the CUDA Toolkit for GPRPS and GFPPS.
 
-GPRSV and GNCWSV optionally load primesieve at runtime. It is not a build-time
+GPRSV_K, GPRSV_N and GNCWSV optionally load primesieve at runtime. It is not a build-time
 dependency because no primesieve header or import library is linked.
 
 ## Linux and WSL
@@ -37,7 +37,7 @@ Build all components with:
 ./scripts/build-all-linux.sh release-assets sm_86 sm_89 sm_100 sm_120
 ```
 
-GPRSV and GNCWSV link `libdl` and enable pthread support for prime-generation
+GPRSV_K, GPRSV_N and GNCWSV link `libdl` and enable pthread support for prime-generation
 workers. GFNSV has its own integer prime/root generation and does not load
 primesieve. GFPS, GPRPS, GFPPS, and GFNSV use per-thread default-stream semantics.
 Keep GFPPS's `ntt_backend.cuh` and `sha256.hpp` next to `src/GFPPS.cu`.
@@ -56,7 +56,8 @@ GFPS\scripts\build-windows.bat build\windows sm_89
 GPRPS\scripts\build-windows.bat build\windows sm_89
 GFPPS\scripts\build-windows.bat build\windows sm_89
 GFNSV\scripts\build-windows.bat build\windows sm_89
-GPRSV\scripts\build-windows.bat build\windows sm_89
+GPRSV_K\scripts\build-windows.bat build\windows sm_89
+GPRSV_N\scripts\build-windows.bat build\windows sm_89
 GNCWSV\scripts\build-windows.bat build\windows sm_89
 ```
 

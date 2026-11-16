@@ -79,11 +79,11 @@ error detection; independently recheck meaningful hits.
 
 ## Siever semantics
 
-GFNSV, GPRSV, and GNCWSV remove candidates for which they find a factor in the requested
-prime interval. A surviving term has only survived that sieve range.
+GFNSV, GPRSV_K, GPRSV_N, and GNCWSV remove candidates for which they find a factor in the
+requested prime interval. A surviving term has only survived that sieve range.
 
 - A reported factor should exactly divide the displayed candidate.
-- Use `--verify` for GPRSV/GNCWSV when validating a build or changing kernels;
+- Use `--verify` for GPRSV_K/GPRSV_N/GNCWSV when validating a build or changing kernels;
   GFNSV verifies factors on the CPU by default unless `--no-verify` is supplied.
 - Compare uninterrupted and resumed runs over small ranges.
 - Preserve the input, output header, prime bounds, factors file, and command

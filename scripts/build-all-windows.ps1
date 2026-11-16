@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $repoDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 
-foreach ($tool in @("GFPS", "GPRPS", "GFPPS", "GFNSV", "GPRSV", "GNCWSV", "GHCWSV", "GHCWPS", "CSPS", "CSSV", "GFPDIVSV")) {
+foreach ($tool in @("GFPS", "GPRPS", "GFPPS", "GFNSV", "GPRSV_K", "GPRSV_N", "GNCWSV", "GHCWSV", "GHCWPS", "CSPS", "CSSV", "GFPDIVSV")) {
     & (Join-Path $repoDirectory "$tool\scripts\build-windows.ps1") `
         -OutputDirectory $outputPath -Architectures $Architectures
 }

@@ -6,7 +6,7 @@ to both Linux executables and Windows `.exe` files.
 
 ## Versioning
 
-The eight tools have independent component versions:
+The tools have independent component versions:
 
 | Tool | Current component version |
 | --- | ---: |
@@ -14,7 +14,8 @@ The eight tools have independent component versions:
 | GPRPS | 2.3 |
 | GFPPS | 1.0 |
 | GFNSV | 1.1 |
-| GPRSV | 2.1 |
+| GPRSV_K | 2.3 |
+| GPRSV_N | 1.1 |
 | GNCWSV | 1.0 |
 | GHCWSV | 1.2 |
 | GHCWPS | 1.0 |
@@ -98,7 +99,8 @@ Current prepared coverage is:
 | GPRPS | built | built | built | built |
 | GFPPS | built | built | built | built |
 | GFNSV | built | built | built | built |
-| GPRSV | built | built | built | built |
+| GPRSV_K | built | built | built | built |
+| GPRSV_N | built | built | built | built |
 | GNCWSV | built | built | built | built |
 
 Do not fill a missing cell by renaming an artifact from another target. Either

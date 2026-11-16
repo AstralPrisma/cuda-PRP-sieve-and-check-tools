@@ -1,3 +1,17 @@
+# 2026.11.16
+
+- Add GPRSV_N 1.1, a CUDA sieve for `k*b^n+/-1` with a fixed `k` and an exponent
+  interval: a baby-step/giant-step discrete-log search per prime, independent or
+  paired signs, resumable output, and optional LLR/PFGW expression export.
+- Rename GPRSV to GPRSV_K (directory, source file and build output names) to make
+  the direction explicit: fixed `n`, variable `k`. The program, its options and
+  its 2.3 binaries are unchanged; the v2026.10.29 release assets are renamed to
+  `gprsv_k-*`.
+- GPRSV_N 1.1 defaults to the independent sign mode; the paired/twin mode must be
+  requested with `--paired` and refuses configurations where `p=3` would remove
+  every exponent (3 divides neither `k` nor the base).
+- Other ten tools and their binaries are unchanged.
+
 # 2026.10.29.1
 
 - Add GFPDIVSV1.0 CUDA for factorial/primorial single-factor removal, dual signs, exact factor verification, atomic snapshots and offline GFPPS task conversion.
@@ -8,7 +22,7 @@
 
 - Add CSPS 1.0 and CSSV 1.3 for consecutive/alternate Catena Siderum power products. CSSV supports independent signs, scientific sieve bounds, periodic checked recovery and offline task conversion.
 - GFPPS 1.1 accepts exact single-factor removal `n!/d±1` and `n#/q±1`, retaining legacy multiplication and GFPPS001 checkpoints. Quotient checkpoints use GFPPS002 and bind the divisor. Linux host construction optionally uses statically linked GNU GMP; Windows has native CUDA binaries with Boost host construction.
-- Promote validated GPRSV 2.3 and GHCWSV 1.3 prime-generation/scheduling updates, with bundled primesieve 12.x runtime libraries. No universal speedup claim is made.
+- Promote validated GPRSV_K 2.3 (then still named GPRSV) and GHCWSV 1.3 prime-generation/scheduling updates, with bundled primesieve 12.x runtime libraries. No universal speedup claim is made.
 - Provide four native SM targets on both Windows and Linux for these five updated tools; distinguish CPU startup/build coverage from physical GPU testing in the manifest.
 - Generic GFPS 4.5 is unchanged. Private fixed-GFN16 and recursive-Fermat tools are not part of this release.
 

@@ -39,11 +39,18 @@ awk 'NF && $0 !~ /^#/' "${scratch}/gfnsv-direct.txt" > "${scratch}/gfnsv-direct-
 cmp "${scratch}/gfnsv-resume-bases.txt" "${scratch}/gfnsv-direct-bases.txt"
 "${bin_dir}/GFNSV_${arch}" --checkpoint-info "${scratch}/gfnsv-resume.txt"
 
-"${bin_dir}/GPRSV_${arch}" \
+"${bin_dir}/GPRSV_K_${arch}" \
   --kmin 1 --kmax 100 --base 2 --exp 100 --termtype 1 \
   --pmin 2 --pmax 10000 --cpu-small-prime 2 --prime-generator segmented \
-  --outputterms "${scratch}/gprsv.txt" --verify --quiet
-test -f "${scratch}/gprsv.txt"
+  --outputterms "${scratch}/gprsv_k.txt" --verify --quiet
+test -f "${scratch}/gprsv_k.txt"
+
+"${bin_dir}/GPRSV_N_${arch}" \
+  -k 12345 -b 2 -n 1000 -N 1150 -P 100000 \
+  --cpu-small-prime 2 --prime-generator segmented \
+  -o "${scratch}/gprsv_n.txt" --verify --quiet
+test -s "${scratch}/gprsv_n.txt"
+test "$(head -c 4 "${scratch}/gprsv_n.txt")" = "ABC "
 
 "${bin_dir}/GNCWSV_${arch}" \
   --amin 2 --amax 40 --base 3 --mode 1 \

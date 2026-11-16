@@ -4,8 +4,8 @@ param(
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
-    [ValidateSet('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')]
-    [string[]]$Tools = @('GFPS','GPRPS','GFPPS','GFNSV','GPRSV','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')
+    [ValidateSet('GFPS','GPRPS','GFPPS','GFNSV','GPRSV_K','GPRSV_N','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')]
+    [string[]]$Tools = @('GFPS','GPRPS','GFPPS','GFNSV','GPRSV_K','GPRSV_N','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +20,8 @@ $versions = [ordered]@{
     GPRPS = "2.4"
     GFPPS = "1.1"
     GFNSV = "1.1"
-    GPRSV = "2.3"
+    GPRSV_K = "2.3"
+    GPRSV_N = "1.1"
     GNCWSV = "1.2.0"
     GHCWSV = "1.3"
     GHCWPS = "1.2"
@@ -202,10 +203,10 @@ try {
                 }
             }
 
-            if ($tool -in @('GPRSV','GHCWSV','CSSV','GFPDIVSV')) {
-                # GPRSV/GHCWSV on Windows use the executable-directory loader;
+            if ($tool -in @('GPRSV_K','GPRSV_N','GHCWSV','CSSV','GFPDIVSV')) {
+                # GPRSV_K/GPRSV_N/GHCWSV on Windows use the executable-directory loader;
                 # CSSV and all Linux variants explicitly search bin/lib.
-                $runtimeStage = if ($platform -eq 'windows' -and $tool -in @('GPRSV','GHCWSV')) { $binStage } else { Join-Path $binStage 'lib' }
+                $runtimeStage = if ($platform -eq 'windows' -and $tool -in @('GPRSV_K','GPRSV_N','GHCWSV')) { $binStage } else { Join-Path $binStage 'lib' }
                 [IO.Directory]::CreateDirectory($runtimeStage) | Out-Null
                 $runtimeName = if ($platform -eq 'windows') { 'primesieve.dll' } else { 'libprimesieve.so.12' }
                 foreach ($name in @($runtimeName,'COPYING.primesieve')) {

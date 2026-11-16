@@ -1,6 +1,16 @@
-# GPRSV
+﻿# GPRSV_K
 
-GPRSV is a CUDA sieve for the paired or independent forms
+GPRSV_K is the original GPRSV program, renamed on 2026-11-16 to make the
+direction explicit: it sieves a **`k` interval for a fixed `n`**. Its companion
+[`GPRSV_N`](../GPRSV_N/) does the opposite (fixed `k`, variable exponent).
+
+The program itself, its command line, its versions and its published 2.3
+binaries are unchanged; only the directory, the source file name
+(`src/GPRSV_K.cu`) and the build output names (`GPRSV_K_sm_*`) changed. The
+startup banner still reads `GPRSV`, and the v2026.10.29 archives were built
+before the rename, so their files are named `GPRSV_sm_*`.
+
+GPRSV_K is a CUDA sieve for the paired or independent forms
 
 ```text
 k*b^n - 1        k*b^n + 1

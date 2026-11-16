@@ -1,10 +1,10 @@
-# Product-path regression utilities
+﻿# Product-path regression utilities
 
 These checks are offline and do not modify existing candidate files. Do not run
 GPU checks alongside a production computation. Redirect stdout to a new log if
 you want to retain the detailed results.
 
-CPU-only exact integer and format/oracle checks (from `GPRSV/`):
+CPU-only exact integer and format/oracle checks (from the original `GPRSV/` tree, now `GPRSV_K/`):
 
 ```bash
 python3 tests/verify_montgomery_products.py

@@ -54,11 +54,16 @@ try {
         throw "GFNSV resumed/full-root and direct/paired-root survivors differ"
     }
     Invoke-Checked (Join-Path $binPath "GFNSV_$Architecture.exe") @("--checkpoint-info", $resumePath)
-    Invoke-Checked (Join-Path $binPath "GPRSV_$Architecture.exe") @(
+    Invoke-Checked (Join-Path $binPath "GPRSV_K_$Architecture.exe") @(
         "--kmin", "1", "--kmax", "100", "--base", "2", "--exp", "100",
         "--termtype", "1", "--pmin", "2", "--pmax", "10000",
         "--cpu-small-prime", "2", "--prime-generator", "segmented",
-        "--outputterms", (Join-Path $scratch "gprsv.txt"), "--verify", "--quiet"
+        "--outputterms", (Join-Path $scratch "gprsv_k.txt"), "--verify", "--quiet"
+    )
+    Invoke-Checked (Join-Path $binPath "GPRSV_N_$Architecture.exe") @(
+        "-k", "12345", "-b", "2", "-n", "1000", "-N", "1150", "-P", "100000",
+        "--cpu-small-prime", "2", "--prime-generator", "segmented",
+        "-o", (Join-Path $scratch "gprsv_n.txt"), "--verify", "--quiet"
     )
     Invoke-Checked (Join-Path $binPath "GNCWSV_$Architecture.exe") @(
         "--amin", "2", "--amax", "40", "--base", "3", "--mode", "1",
