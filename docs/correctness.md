@@ -59,6 +59,31 @@ performance, not the intended modular result.
 supported checks. It is useful for validation, but its use does not turn a
 Fermat PRP result into a deterministic primality proof.
 
+### PRPS
+
+PRPS is the base-2 specialisation of GPRPS: `N = k*2^n+c` with `c` equal to
+`+1` or `-1`. The exponentiation chain is simplified to `x0 = a^k` followed by
+exactly `n` squarings, which makes a Fermat residue plus a full proof
+certificate cheap enough to produce on every check.
+
+The optional certificate is written through `PRPS_POINTS` / `PRPS_COUNT`
+plus `PRPS_CERT`. The resulting file is byte-identical to what `prst` produces
+for the same expression, witness and proof-point count, and `prst -proof cert`
+accepts it. Verifying a certificate costs a few seconds of CPU at n = 3.5M,
+because it expands the recorded points into X and performs M squarings rather
+than repeating the chain.
+
+`--checkpoint FILE` stores the processed square count and the current residue.
+A companion `FILE.points` records how much of the proof-point dump is already
+on disk, so a resumed run appends the remaining points. A resumed run yields a
+bit-identical residue and a byte-identical certificate. An interruption costs
+at most `--checkpoint-every-bits` of work; without `--checkpoint`, interrupted
+progress cannot be recovered.
+
+As with GPRPS, a Fermat PRP result is not a deterministic primality proof, and
+neither checkpoint integrity nor the certificate substitution makes it one.
+The certificate proves the arithmetic chain, not the primality claim.
+
 ### GFPPS
 
 GFPPS checks `k*n!+/-1` and `k*n#+/-1`, with `n#` defined as the product of

@@ -15,3 +15,6 @@ for tool in GFPS GPRPS GFPPS GFNSV GPRSV_K GPRSV_N GNCWSV GHCWSV GHCWPS CSPS CSS
     "${repo_dir}/${tool}/scripts/build-linux.sh" "${out_dir}"
   fi
 done
+
+# PRPS ships as one unified binary, so it takes no architecture list.
+"${repo_dir}/PRPS/scripts/build-linux.sh" "${out_dir}"

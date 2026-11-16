@@ -1,4 +1,4 @@
-# CUDA PRP: sieve and check tools
+﻿# CUDA PRP: sieve and check tools
 
 This repository collects twelve CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
@@ -26,7 +26,7 @@ The [v2026.09.13 release](docs/releases/v2026.09.13.md) updates GFPS to4.5, GHCW
 
 The [v2026.09.11 release](docs/releases/v2026.09.11.md) adds `--sign both` to GHCWSV 1.1, including sign-preserving checkpoints and conversion. Other seven tools are unchanged.
 
-The [v2026.09.10 release](docs/releases/v2026.09.10.md) adds GHCWSV and GHCWPS for `b^n*n^b±1`. Four native GPU targets per platform are provided. The other six tools remain unchanged; their packages are linked from v2026.09.9.
+The [v2026.09.10 release](docs/releases/v2026.09.10.md) adds GHCWSV and GHCWPS for `b^n*n^b卤1`. Four native GPU targets per platform are provided. The other six tools remain unchanged; their packages are linked from v2026.09.9.
 
 The [v2026.09.9 release](docs/releases/v2026.09.9.md) promotes GFPPS's parallel
 NTT and exact fused-carry path while retaining component version 1.0. For the
@@ -48,31 +48,25 @@ executables; GFPS's separate experimental optimization is not promoted.
 | --- | ---: | --- |
 | [`GFPS/`](GFPS/) | 4.5 | Checks generalized Fermat candidates `b^(2^n)+1` with CUDA NTT arithmetic. |
 | [`GPRPS/`](GPRPS/) | 2.4 | Checks generalized Proth/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
+| [`PRPS/`](PRPS/) | 1.0 | Checks base-2 Proth/Riesel candidates `k*2^n+1` and `k*2^n-1`, with checkpoint/resume and prst-verifiable certificates. Ships as one unified binary covering every supported SM target. |
 | [`GFPPS/`](GFPPS/) | 1.1 | Checks factorial/primorial multiplication and exact single-factor-removal candidates. |
-| [`GFPDIVSV/`](GFPDIVSV/) | 1.1 | Adaptive CUDA sieve for `n!/d±1` and `n#/q±1`, with checked recovery and offline task conversion. |
+| [`GFPDIVSV/`](GFPDIVSV/) | 1.1 | Adaptive CUDA sieve for `n!/d卤1` and `n#/q卤1`, with checked recovery and offline task conversion. |
 | [`CSPS/`](CSPS/) | 1.0 | Checks consecutive/alternate Catena Siderum power-product candidates. |
 | [`CSSV/`](CSSV/) | 1.3 | CPU/CUDA sieve for Catena Siderum candidates, with independent signs and checked continuation. |
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
 | [`GPRSV_K/`](GPRSV_K/) | 2.3 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` for a fixed `n` and a `k` interval. |
 | [`GPRSV_N/`](GPRSV_N/) | 1.1 | Sieves `k*b^n+/-1` for a fixed `k` over an exponent interval (discrete-log BSGS). |
 | [`GNCWSV/`](GNCWSV/) | 1.2.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
-| [`GHCWSV/`](GHCWSV/) | 1.3 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
+| [`GHCWSV/`](GHCWSV/) | 1.3 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b卤1`. |
 | [`GHCWPS/`](GHCWPS/) | 1.2 | Checks the same family with NTT arithmetic and safe checkpoints. |
 
-## 中文简介
-
-本仓库统一发布十二个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
-检查，GFNSV 用于广义费马数 GPU 筛选，GPRPS 用于广义 Proth/Riesel
-数 PRP 检查，GFPPS 用于广义阶乘/素数阶乘数 PRP 检查，GPRSV_K 用于固定
-`n`、筛一段 `k` 的 `k*b^n±1` 等数型筛选，GPRSV_N 用于固定 `k`、筛一段指数 `n` 的同类筛选，GNCWSV 用于广义 Cullen/Woodall 与
-Near Cullen/Woodall 数型筛选；CSPS/CSSV用于Catena Siderum检验和筛分。
-GFPPS支持乘法和精确移除单个因子的除法形式；GFPDIVSV用于单因子移除形式的CUDA筛分。
-源码位于十二个同名目录；预编译程序只在
-Releases 中发布。`PRP` 不是确定性素数证明，命中后仍须由独立程序复核。
-
-这里的 GFPS 指本仓库中的 generalized-Fermat CUDA checker；其他项目或
-历史素数记录中可能存在同缩写但不同的程序。
-
+## 涓枃绠€浠?
+鏈粨搴撶粺涓€鍙戝竷鍗佷簩涓?CUDA 澶ф暣鏁版悳绱㈠伐鍏凤細GFPS 鐢ㄤ簬骞夸箟璐归┈鏁?PRP
+妫€鏌ワ紝GFNSV 鐢ㄤ簬骞夸箟璐归┈鏁?GPU 绛涢€夛紝GPRPS 鐢ㄤ簬骞夸箟 Proth/Riesel
+鏁?PRP 妫€鏌ワ紝GFPPS 鐢ㄤ簬骞夸箟闃朵箻/绱犳暟闃朵箻鏁?PRP 妫€鏌ワ紝GPRSV_K 鐢ㄤ簬鍥哄畾
+`n`銆佺瓫涓€娈?`k` 鐨?`k*b^n卤1` 绛夋暟鍨嬬瓫閫夛紝GPRSV_N 鐢ㄤ簬鍥哄畾 `k`銆佺瓫涓€娈垫寚鏁?`n` 鐨勫悓绫荤瓫閫夛紝GNCWSV 鐢ㄤ簬骞夸箟 Cullen/Woodall 涓?Near Cullen/Woodall 鏁板瀷绛涢€夛紱CSPS/CSSV鐢ㄤ簬Catena Siderum妫€楠屽拰绛涘垎銆?GFPPS鏀寔涔樻硶鍜岀簿纭Щ闄ゅ崟涓洜瀛愮殑闄ゆ硶褰㈠紡锛汫FPDIVSV鐢ㄤ簬鍗曞洜瀛愮Щ闄ゅ舰寮忕殑CUDA绛涘垎銆?婧愮爜浣嶄簬鍗佷簩涓悓鍚嶇洰褰曪紱棰勭紪璇戠▼搴忓彧鍦?Releases 涓彂甯冦€俙PRP` 涓嶆槸纭畾鎬х礌鏁拌瘉鏄庯紝鍛戒腑鍚庝粛椤荤敱鐙珛绋嬪簭澶嶆牳銆?
+杩欓噷鐨?GFPS 鎸囨湰浠撳簱涓殑 generalized-Fermat CUDA checker锛涘叾浠栭」鐩垨
+鍘嗗彶绱犳暟璁板綍涓彲鑳藉瓨鍦ㄥ悓缂╁啓浣嗕笉鍚岀殑绋嬪簭銆?
 The checkers use exact integer NTT/CRT arithmetic within their accepted input
 ranges. They reject parameters when the available CRT range is insufficient.
 This arithmetic guarantee does not change the mathematical meaning of a PRP
@@ -257,3 +251,4 @@ or later (`GPL-2.0-or-later`). See [`LICENSE`](LICENSE). GPRSV_K, GPRSV_N and GN
 contain work derived from the GPLv2-or-later mtsieve/twinsieve implementation. Other
 libraries and toolchain components retain their own licenses; see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+

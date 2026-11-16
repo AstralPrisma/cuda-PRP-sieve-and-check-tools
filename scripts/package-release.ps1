@@ -1,11 +1,11 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$SuiteVersion = "v2026.10.29.2",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets\packages"),
     [string]$BuildMetadataPath = "",
-    [ValidateSet('GFPS','GPRPS','GFPPS','GFNSV','GPRSV_K','GPRSV_N','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')]
-    [string[]]$Tools = @('GFPS','GPRPS','GFPPS','GFNSV','GPRSV_K','GPRSV_N','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')
+    [ValidateSet('GFPS','GPRPS','PRPS','GFPPS','GFNSV','GPRSV_K','GPRSV_N','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')]
+    [string[]]$Tools = @('GFPS','GPRPS','PRPS','GFPPS','GFNSV','GPRSV_K','GPRSV_N','GNCWSV','GHCWSV','GHCWPS','CSPS','CSSV','GFPDIVSV')
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +18,7 @@ $architectures = @("sm_86", "sm_89", "sm_100", "sm_120")
 $versions = [ordered]@{
     GFPS = "4.5"
     GPRPS = "2.4"
+    PRPS = "1.0"
     GFPPS = "1.1"
     GFNSV = "1.1"
     GPRSV_K = "2.3"
@@ -141,9 +142,9 @@ try {
                 if (-not $sourceProperty -or $sourceProperty.Value -ne $sourceFiles[$name]) { throw "Source hash mismatch: $key $name" }
             }
             $suffix = if ($platform -eq "windows") { ".exe" } else { "" }
-            if (@($record.binaries).Count -ne $architectures.Count) { throw "Binary metadata count mismatch: $key" }
-            foreach ($arch in $architectures) {
-                $binaryName = "${tool}_${arch}${suffix}"
+            $binaryNames = if ($record.unified_binary) { @("$tool$suffix") } else { @($architectures | ForEach-Object { "${tool}_$_$suffix" }) }
+            if (@($record.binaries).Count -ne $binaryNames.Count) { throw "Binary metadata count mismatch: $key" }
+            foreach ($binaryName in $binaryNames) {
                 $entries = @($record.binaries | Where-Object { $_.file -eq $binaryName })
                 if ($entries.Count -ne 1) { throw "Missing or duplicate binary record: $key $binaryName" }
                 $entry = $entries[0]
@@ -180,23 +181,31 @@ try {
             [IO.Directory]::CreateDirectory($licensesStage) | Out-Null
 
             $binaryRecords = @()
-            foreach ($arch in $architectures) {
-                $binaryName = "${tool}_${arch}${suffix}"
+            $stageNames = if ($buildRecord.unified_binary) { @("$tool$suffix") } else { @($architectures | ForEach-Object { "${tool}_$_$suffix" }) }
+            foreach ($binaryName in $stageNames) {
                 $sourceBinary = Join-Path (Join-Path $rawPath $platform) $binaryName
                 if (-not [IO.File]::Exists($sourceBinary)) { throw "Missing binary: $sourceBinary" }
                 $binaryMetadata = @($buildRecord.binaries | Where-Object { $_.file -eq $binaryName })[0]
                 [IO.File]::Copy($sourceBinary, (Join-Path $binStage $binaryName), $true)
                 $binaryRecords += [ordered]@{
                     file = "bin/$binaryName"
-                    target = $arch
+                    target = if ($buildRecord.unified_binary) { "unified (sm_86/sm_89/sm_100/sm_120)" } else { $arch }
                     sha256 = Get-Sha256 $sourceBinary
                     runtime_tested = $binaryMetadata.runtime_tested
                     evidence = $binaryMetadata.evidence
                 }
             }
 
-            if ($tool -eq "GNCWSV" -and $platform -eq "windows") {
-                foreach ($runtimeName in @("primesieve.dll", "COPYING.primesieve")) {
+            if ($tool -eq 'PRPS' -and $platform -eq 'windows') {
+                # PRPS links GMP, so the runtime DLL has to travel with the exe.
+                $gmpRuntime = Join-Path (Join-Path $rawPath $platform) 'libgmp-gw1.dll'
+                if (-not [IO.File]::Exists($gmpRuntime)) { throw "Missing PRPS runtime: libgmp-gw1.dll" }
+                $expected = $buildRecord.runtime_files.PSObject.Properties['libgmp-gw1.dll']
+                if (-not $expected -or (Get-Sha256 $gmpRuntime) -ne $expected.Value) { throw "Runtime hash mismatch: PRPS/$platform/libgmp-gw1.dll" }
+                [IO.File]::Copy($gmpRuntime, (Join-Path $binStage 'libgmp-gw1.dll'), $true)
+            }
+
+            if ($tool -eq "GNCWSV" -and $platform -eq "windows") {                foreach ($runtimeName in @("primesieve.dll", "COPYING.primesieve")) {
                     $runtimePath = Join-Path (Join-Path $rawPath $platform) $runtimeName
                     if (-not [IO.File]::Exists($runtimePath)) { throw "Missing GNCWSV runtime: $runtimeName" }
                     [IO.File]::Copy($runtimePath, (Join-Path $binStage $runtimeName), $true)
@@ -232,7 +241,7 @@ try {
                     throw "Supporting file hash mismatch: $tool/$name"
                 }
             }
-            if ($tool -in @('GFPPS','GFPDIVSV') -and $platform -eq 'linux') {
+            if ($tool -in @('GFPPS','GFPDIVSV','PRPS') -and $platform -eq 'linux') {
                 $gmpSource = Join-Path $rawPath 'gmp-6.3.0.tar.xz'
                 if (-not [IO.File]::Exists($gmpSource) -or (Get-Sha256 $gmpSource) -ne 'a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898') { throw 'Missing or mismatched corresponding GMP source' }
                 [IO.File]::Copy($gmpSource, (Join-Path $licensesStage 'gmp-6.3.0.tar.xz'), $true)
@@ -340,3 +349,5 @@ finally {
     Pop-Location
     if ($stagingCreated) { Remove-DirectoryIfPresent $stagingPath }
 }
+
+

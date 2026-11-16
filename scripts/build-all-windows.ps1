@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets"),
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -13,3 +13,7 @@ foreach ($tool in @("GFPS", "GPRPS", "GFPPS", "GFNSV", "GPRSV_K", "GPRSV_N", "GN
     & (Join-Path $repoDirectory "$tool\scripts\build-windows.ps1") `
         -OutputDirectory $outputPath -Architectures $Architectures
 }
+
+# PRPS ships as one unified binary, so it takes no architecture list.
+& (Join-Path $repoDirectory "PRPS\scripts\build-windows.ps1") -OutputDirectory $outputPath
+

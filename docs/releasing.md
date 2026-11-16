@@ -12,6 +12,7 @@ The tools have independent component versions:
 | --- | ---: |
 | GFPS | 4.4 |
 | GPRPS | 2.3 |
+| PRPS | 1.0 |
 | GFPPS | 1.0 |
 | GFNSV | 1.1 |
 | GPRSV_K | 2.3 |
@@ -97,6 +98,7 @@ Current prepared coverage is:
 | --- | :---: | :---: | :---: | :---: |
 | GFPS | built | built | built | built |
 | GPRPS | built | built | built | built |
+| PRPS (unified, covers all four) | built | built | built | built |
 | GFPPS | built | built | built | built |
 | GFNSV | built | built | built | built |
 | GPRSV_K | built | built | built | built |
@@ -114,13 +116,16 @@ required for runtime status.
 ## Artifact naming
 
 Use lowercase, explicit, sortable names. A component package contains all four
-native SM variants for one operating system:
+native SM variants for one operating system, except PRPS, whose package holds a
+single unified executable that already covers all four targets:
 
 ```text
 gfps-4.4-linux-x86_64-cuda13.3.tar.xz
 gfps-4.4-windows-x86_64-cuda13.3.zip
 gprps-2.3-linux-x86_64-cuda13.3.tar.xz
 gprps-2.3-windows-x86_64-cuda13.3.zip
+prps-1.0-linux-x86_64-cuda13.3.tar.xz
+prps-1.0-windows-x86_64-cuda13.3.zip
 gfpps-1.0-linux-x86_64-cuda13.3.tar.xz
 gfpps-1.0-windows-x86_64-cuda13.3.zip
 gfnsv-1.1-linux-x86_64-cuda13.3.tar.xz
