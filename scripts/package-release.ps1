@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$SuiteVersion = "v2026.10.29.2",
     [string]$RawDirectory = (Join-Path $PSScriptRoot "..\release-assets\raw"),

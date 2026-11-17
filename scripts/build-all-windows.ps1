@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release-assets"),
     [Parameter(ValueFromRemainingArguments = $true)]

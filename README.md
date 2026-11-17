@@ -1,4 +1,4 @@
-﻿# CUDA PRP: sieve and check tools
+# CUDA PRP: sieve and check tools
 
 This repository collects twelve CUDA programs for experimental large-integer
 searches. Source code is tracked in Git. Prebuilt Linux and Windows executables
@@ -26,7 +26,7 @@ The [v2026.09.13 release](docs/releases/v2026.09.13.md) updates GFPS to4.5, GHCW
 
 The [v2026.09.11 release](docs/releases/v2026.09.11.md) adds `--sign both` to GHCWSV 1.1, including sign-preserving checkpoints and conversion. Other seven tools are unchanged.
 
-The [v2026.09.10 release](docs/releases/v2026.09.10.md) adds GHCWSV and GHCWPS for `b^n*n^b卤1`. Four native GPU targets per platform are provided. The other six tools remain unchanged; their packages are linked from v2026.09.9.
+The [v2026.09.10 release](docs/releases/v2026.09.10.md) adds GHCWSV and GHCWPS for `b^n*n^b±1`. Four native GPU targets per platform are provided. The other six tools remain unchanged; their packages are linked from v2026.09.9.
 
 The [v2026.09.9 release](docs/releases/v2026.09.9.md) promotes GFPPS's parallel
 NTT and exact fused-carry path while retaining component version 1.0. For the
@@ -50,23 +50,30 @@ executables; GFPS's separate experimental optimization is not promoted.
 | [`GPRPS/`](GPRPS/) | 2.4 | Checks generalized Proth/Riesel candidates `k*b^n+1` and `k*b^n-1`. |
 | [`PRPS/`](PRPS/) | 1.0 | Checks base-2 Proth/Riesel candidates `k*2^n+1` and `k*2^n-1`, with checkpoint/resume and prst-verifiable certificates. Ships as one unified binary covering every supported SM target. |
 | [`GFPPS/`](GFPPS/) | 1.1 | Checks factorial/primorial multiplication and exact single-factor-removal candidates. |
-| [`GFPDIVSV/`](GFPDIVSV/) | 1.1 | Adaptive CUDA sieve for `n!/d卤1` and `n#/q卤1`, with checked recovery and offline task conversion. |
+| [`GFPDIVSV/`](GFPDIVSV/) | 1.1 | Adaptive CUDA sieve for `n!/d±1` and `n#/q±1`, with checked recovery and offline task conversion. |
 | [`CSPS/`](CSPS/) | 1.0 | Checks consecutive/alternate Catena Siderum power-product candidates. |
 | [`CSSV/`](CSSV/) | 1.3 | CPU/CUDA sieve for Catena Siderum candidates, with independent signs and checked continuation. |
 | [`GFNSV/`](GFNSV/) | 1.1 | GPU-sieves even bases for `b^(2^n)+1`, with single-file continuation and offline task conversion. |
 | [`GPRSV_K/`](GPRSV_K/) | 2.3 | Sieves `k*b^n+/-1`, `k*n#+/-1`, and `k*n!+/-1` for a fixed `n` and a `k` interval. |
 | [`GPRSV_N/`](GPRSV_N/) | 1.1 | Sieves `k*b^n+/-1` for a fixed `k` over an exponent interval (discrete-log BSGS). |
 | [`GNCWSV/`](GNCWSV/) | 1.2.0 | Sieves generalized Cullen/Woodall and near-Cullen/near-Woodall families. |
-| [`GHCWSV/`](GHCWSV/) | 1.3 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b卤1`. |
+| [`GHCWSV/`](GHCWSV/) | 1.3 | Sieves generalized hyper-Cullen/Woodall candidates `b^n*n^b±1`. |
 | [`GHCWPS/`](GHCWPS/) | 1.2 | Checks the same family with NTT arithmetic and safe checkpoints. |
 
-## 涓枃绠€浠?
-鏈粨搴撶粺涓€鍙戝竷鍗佷簩涓?CUDA 澶ф暣鏁版悳绱㈠伐鍏凤細GFPS 鐢ㄤ簬骞夸箟璐归┈鏁?PRP
-妫€鏌ワ紝GFNSV 鐢ㄤ簬骞夸箟璐归┈鏁?GPU 绛涢€夛紝GPRPS 鐢ㄤ簬骞夸箟 Proth/Riesel
-鏁?PRP 妫€鏌ワ紝GFPPS 鐢ㄤ簬骞夸箟闃朵箻/绱犳暟闃朵箻鏁?PRP 妫€鏌ワ紝GPRSV_K 鐢ㄤ簬鍥哄畾
-`n`銆佺瓫涓€娈?`k` 鐨?`k*b^n卤1` 绛夋暟鍨嬬瓫閫夛紝GPRSV_N 鐢ㄤ簬鍥哄畾 `k`銆佺瓫涓€娈垫寚鏁?`n` 鐨勫悓绫荤瓫閫夛紝GNCWSV 鐢ㄤ簬骞夸箟 Cullen/Woodall 涓?Near Cullen/Woodall 鏁板瀷绛涢€夛紱CSPS/CSSV鐢ㄤ簬Catena Siderum妫€楠屽拰绛涘垎銆?GFPPS鏀寔涔樻硶鍜岀簿纭Щ闄ゅ崟涓洜瀛愮殑闄ゆ硶褰㈠紡锛汫FPDIVSV鐢ㄤ簬鍗曞洜瀛愮Щ闄ゅ舰寮忕殑CUDA绛涘垎銆?婧愮爜浣嶄簬鍗佷簩涓悓鍚嶇洰褰曪紱棰勭紪璇戠▼搴忓彧鍦?Releases 涓彂甯冦€俙PRP` 涓嶆槸纭畾鎬х礌鏁拌瘉鏄庯紝鍛戒腑鍚庝粛椤荤敱鐙珛绋嬪簭澶嶆牳銆?
-杩欓噷鐨?GFPS 鎸囨湰浠撳簱涓殑 generalized-Fermat CUDA checker锛涘叾浠栭」鐩垨
-鍘嗗彶绱犳暟璁板綍涓彲鑳藉瓨鍦ㄥ悓缂╁啓浣嗕笉鍚岀殑绋嬪簭銆?
+## 中文简介
+
+本仓库统一发布十三个 CUDA 大整数搜索工具：GFPS 用于广义费马数 PRP
+检查，GFNSV 用于广义费马数 GPU 筛选，GPRPS 用于广义 Proth/Riesel
+数 PRP 检查，PRPS 用于 base-2 Proth/Riesel 数 PRP 检查（单一通用二进制，可附带证书），GFPPS 用于广义阶乘/素数阶乘数 PRP 检查，GPRSV_K 用于固定
+`n`、筛一段 `k` 的 `k*b^n±1` 等数型筛选，GPRSV_N 用于固定 `k`、筛一段指数 `n` 的同类筛选，GNCWSV 用于广义 Cullen/Woodall 与
+Near Cullen/Woodall 数型筛选；CSPS/CSSV用于Catena Siderum检验和筛分。
+GFPPS支持乘法和精确移除单个因子的除法形式；GFPDIVSV用于单因子移除形式的CUDA筛分。
+源码位于十三个同名目录；预编译程序只在
+Releases 中发布。`PRP` 不是确定性素数证明，命中后仍须由独立程序复核。
+
+这里的 GFPS 指本仓库中的 generalized-Fermat CUDA checker；其他项目或
+历史素数记录中可能存在同缩写但不同的程序。
+
 The checkers use exact integer NTT/CRT arithmetic within their accepted input
 ranges. They reject parameters when the available CRT range is insufficient.
 This arithmetic guarantee does not change the mathematical meaning of a PRP
@@ -79,7 +86,10 @@ just the `b < 2^63` storage limit. **Current production modes support only
 
 GFPS 4.5 retains half-length negacyclic NTT and checked carry batches, and
 fuses carry rotation, convergence checking, and RNS export for 100%-duty
-batches. GPRPS 2.4 uses condition-checked weighted scans and compact carry
+batches. PRPS 1.0 specialises GPRPS to base 2 with a simplified `a^k` plus
+`n`-squarings chain, prst-verifiable certificates, and checkpoint/resume
+that also carries the proof-point dump. GPRPS 2.4 uses condition-checked
+weighted scans and compact carry
 reduction, retaining the exact fallback where required. GFNSV 1.1 provides GPU
 sieving with portable single-file recovery, progress/ETA, and optional
 efficiency limits; the older CPU GFNSV is not bundled.
@@ -105,20 +115,23 @@ timings and the limits of validation are in
 | GPRSV_N 1.1 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.11.16/gprsv_n-1.1-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.11.16/gprsv_n-1.1-windows-x86_64-cuda13.3.zip) |
 | GHCWSV 1.3 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/ghcwsv-1.3-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.10.29/ghcwsv-1.3-windows-x86_64-cuda13.3.zip) |
 | GPRPS 2.4 | [CUDA 12.8](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.09.12/gprps-2.4-linux-x86_64-cuda12.8.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.09.12/gprps-2.4-windows-x86_64-cuda13.3.zip) |
+| PRPS 1.0 | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.11.17/prps-1.0-linux-x86_64-cuda13.3.tar.xz) | [CUDA 13.3](https://github.com/AstralPrisma/cuda-PRP-sieve-and-check-tools/releases/download/v2026.11.17/prps-1.0-windows-x86_64-cuda13.3.zip) |
 
 Each archive includes `SHA256SUMS` and build metadata. The GPRSV_K and GPRSV_N
-Linux archives include primesieve 12.x and its BSD license.
+Linux archives include primesieve 12.x and its BSD license. The PRPS Linux
+archive includes the GMP 6.3.0 source it links against, and the Windows
+archive carries `libgmp-gw1.dll` next to the executable.
 
 Release packages are separated by operating system. Each package contains the
 native CUDA architectures shown below; select the executable matching the
 target GPU.
 
-| CUDA target | GFPS | GPRPS | GFPPS | GFNSV | GPRSV_K | GPRSV_N | GNCWSV | GHCWSV | GHCWPS |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `sm_86` | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| `sm_89` | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| `sm_100` | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| `sm_120` | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| CUDA target | GFPS | GPRPS | PRPS | GFPPS | GFNSV | GPRSV_K | GPRSV_N | GNCWSV | GHCWSV | GHCWPS |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `sm_86` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| `sm_89` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| `sm_100` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| `sm_120` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 
 Both Linux x86-64 ELF and Windows x64 PE executables are provided. Each file
 contains native cubins for the SM target in its filename. CUDA may also embed
@@ -126,6 +139,10 @@ PTX for that same target; these packages do not use one universal executable
 for all GPU generations. Architectures that have only been cross-compiled are
 marked as such in the Release notes; only `sm_89` was runtime-tested for the
 initial public release.
+
+**PRPS is the exception**: it ships one unified executable covering all four
+targets, so its package contains a single `PRPS` / `PRPS.exe` and the driver
+selects the matching code at run time.
 
 The GFPPS optimization additionally has RTX 5090/Linux (`sm_120`) runtime
 evidence, alongside RTX 4060 Laptop/Windows (`sm_89`). This does not extend
@@ -171,9 +188,10 @@ the displayed numbers.
 ## Building from source
 
 The programs require a CUDA toolkit supporting the selected architecture and a
-C++17 host compiler. GFPS, GPRPS, and GFPPS use Boost.Multiprecision headers; the
-Windows GFNSV build uses Boost for host-side 128-bit arithmetic. GPRPS and GFPPS use CUB
-through the CUDA toolkit.
+C++17 host compiler. GFPS, GPRPS, PRPS, and GFPPS use Boost.Multiprecision headers; the
+Windows GFNSV build uses Boost for host-side 128-bit arithmetic. GPRPS, PRPS, and GFPPS use CUB
+through the CUDA toolkit. PRPS additionally requires GMP, because it serialises
+proof points and certificates with it.
 
 Every tool includes Linux/WSL and Windows build scripts. From the repository
 root, for example:
@@ -181,6 +199,7 @@ root, for example:
 ```bash
 ./GFPS/scripts/build-linux.sh build/linux sm_89
 ./GPRPS/scripts/build-linux.sh build/linux sm_89
+./PRPS/scripts/build-linux.sh build/linux
 ./GFPPS/scripts/build-linux.sh build/linux sm_89
 ./GFNSV/scripts/build-linux.sh build/linux sm_89
 ./GPRSV_K/scripts/build-linux.sh build/linux sm_89
@@ -191,6 +210,7 @@ root, for example:
 ```bat
 GFPS\scripts\build-windows.bat build\windows sm_89
 GPRPS\scripts\build-windows.bat build\windows sm_89
+PRPS\scripts\build-windows.bat build\windows
 GFPPS\scripts\build-windows.bat build\windows sm_89
 GFNSV\scripts\build-windows.bat build\windows sm_89
 GPRSV_K\scripts\build-windows.bat build\windows sm_89
@@ -199,8 +219,11 @@ GNCWSV\scripts\build-windows.bat build\windows sm_89
 ```
 
 Omit the architecture arguments to build all four release targets. GFPS,
-GPRPS, GFPPS, and Windows GFNSV require Boost headers; set `BOOST_ROOT` to the directory that
-contains the `boost` folder. The `.bat` launchers call the checked PowerShell
+GPRPS, PRPS, GFPPS, and Windows GFNSV require Boost headers; set `BOOST_ROOT` to the directory that
+contains the `boost` folder. PRPS takes no architecture arguments at all - it
+always builds the single unified binary - and needs `GMP_ROOT` pointing at a
+directory containing `gmp.h` plus `win64\libgmp-gw1.lib` and
+`win64\libgmp-gw1.dll`. The `.bat` launchers call the checked PowerShell
 build scripts and use CUDA's MSVC host compiler integration.
 
 See [Building on Linux and Windows](docs/building.md) for prerequisites,
@@ -232,6 +255,7 @@ At minimum:
 ```bash
 ./GFPS_sm_89 --selftest
 ./GPRPS_sm_89 --selftest
+./PRPS --selftest
 ./GFPPS_sm_89 --check '3*5!+1' --verify-cpp-int
 ./GFNSV_sm_89 --help
 ./GPRSV_K_sm_89 --version
@@ -251,4 +275,3 @@ or later (`GPL-2.0-or-later`). See [`LICENSE`](LICENSE). GPRSV_K, GPRSV_N and GN
 contain work derived from the GPLv2-or-later mtsieve/twinsieve implementation. Other
 libraries and toolchain components retain their own licenses; see
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-

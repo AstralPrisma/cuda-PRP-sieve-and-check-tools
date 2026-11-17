@@ -10,16 +10,22 @@ The tools have independent component versions:
 
 | Tool | Current component version |
 | --- | ---: |
-| GFPS | 4.4 |
-| GPRPS | 2.3 |
+| GFPS | 4.5 |
+| GPRPS | 2.4 |
 | PRPS | 1.0 |
-| GFPPS | 1.0 |
+| GFPPS | 1.1 |
 | GFNSV | 1.1 |
 | GPRSV_K | 2.3 |
 | GPRSV_N | 1.1 |
-| GNCWSV | 1.0 |
-| GHCWSV | 1.2 |
-| GHCWPS | 1.0 |
+| GNCWSV | 1.2.0 |
+| GHCWSV | 1.3 |
+| GHCWPS | 1.2 |
+| CSPS | 1.0 |
+| CSSV | 1.3 |
+| GFPDIVSV | 1.1 |
+
+These values must match the `$versions` table in `scripts/package-release.ps1`,
+which is the authority the packager actually uses.
 
 The v2026.09.12 release updates only GHCWSV to 1.2. It publishes two new
 component/platform packages (four native targets each), a full tagged source
